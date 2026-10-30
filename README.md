@@ -21,18 +21,19 @@ Replace role labels with GitHub handles in TEAM_WORKFLOW.md if useful. Do not as
 
 This is a **starting point, not a hackathon requirement**. The official problem statement, organizer rules, deployment environment, and any Odoo-specific requirements take precedence.
 
-- **Frontend:** React, TypeScript, Vite
-- **UI:** Tailwind CSS and shadcn/ui when useful
+- **Frontend:** React + TypeScript + Vite
+- **UI:** Tailwind CSS; shadcn/ui components when useful
 - **Data/auth/storage:** Supabase (PostgreSQL, Auth, Storage, Realtime as needed)
-- **Custom backend:** Python, FastAPI, and Pydantic when workflows, privileged operations, AI, or integrations need a server-side API
+- **Custom backend:** Python + FastAPI + Pydantic when custom server-side workflows, privileged operations, AI, or integrations need it
 - **Database changes:** versioned SQL migrations
-- **Tests:** Vitest + React Testing Library; Pytest for Python; add Playwright for critical user journeys if time allows
-- **Collaboration:** GitHub, pull requests, and Antigravity IDE
+- **Tests:** Vitest + React Testing Library; Pytest for Python; Playwright for critical user journeys if time permits
+- **Collaboration:** GitHub, pull requests, and Google Antigravity IDE
 
 Avoid adding every technology by default. If the challenge requires building an Odoo module, using Odoo's ORM, XML views, manifests, or specific APIs, document that decision and use the official Odoo development path instead of forcing this generic stack.
 
 ## Repository map
 
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) — tools to install, what is optional, cloning, and branch checkout
 - [AI_RULES.md](AI_RULES.md) — shared instructions for AI coding assistants, including Antigravity
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component boundaries and data flow
 - [API_CONTRACTS.md](API_CONTRACTS.md) — API conventions and integration agreements
@@ -48,7 +49,7 @@ Avoid adding every technology by default. If the challenge requires building an 
 
 ## Getting started
 
-1. Read this README and TEAM_WORKFLOW.md.
+1. Read this README, SETUP_GUIDE.md, TEAM_WORKFLOW.md, and AI_RULES.md.
 2. Add the official problem statement, constraints, judging criteria, and submission requirements to DOMAIN_MODULES.md.
 3. Agree on the smallest demonstrable end-to-end user journey before splitting implementation tasks.
 4. Confirm the stack against organizer rules; record any change in DECISIONS.md.
@@ -57,12 +58,23 @@ Avoid adding every technology by default. If the challenge requires building an 
 
 ### Local setup
 
-No application runtime is configured yet, so there are no truthful install/run commands at this preparation stage. Once the frontend/backend are created, add exact commands here and in the relevant subdirectory README files.
+The current repository is a preparation scaffold and does not yet contain runnable frontend/backend application code. Follow SETUP_GUIDE.md to install baseline tools and clone the repository. Application-specific install/run commands will be added after the actual architecture is confirmed.
+
+## Branches
+
+- `main` — stable, evaluator-facing baseline
+- `integration` — combined testing branch
+- `feature/lead-backend` — team lead's backend/API work
+- `feature/sanjeeth-frontend` — Sanjeeth's frontend/UI work
+- `feature/jashwanth-database` — Jashwanth's schema/migration work
+- `feature/nihal-modules` — Nihal's agreed supporting work
+
+See TEAM_WORKFLOW.md before committing. Use feature branches and pull requests; keep main presentable.
 
 ## Collaboration rules
 
 - Use Antigravity IDE or another editor; keep repository conventions independent of any one editor.
-- Work on focused branches and open pull requests into main (or the agreed integration branch).
+- Work on focused branches and open pull requests into main or the agreed integration branch.
 - Make meaningful, reviewable commits regularly. The team's hourly contribution requirement means each member should push a real update at least once per hour while actively working—not empty or cosmetic commits.
 - Keep main in a presentable, working state. Do not merge untested or conflicting changes just to show activity.
 - Never commit .env files, credentials, private data, or production secrets.
