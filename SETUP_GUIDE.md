@@ -1,63 +1,45 @@
 # Reproducible Developer Setup — Windows First
 
-**Preparation-only:** No application dependency manifests or startup scripts exist yet. Do not install every candidate framework before the official problem and stack are confirmed.
+**Current direction:** The team lead reports that the project uses Supabase. Inspect the existing repository configuration and project before installing a separate database or changing frameworks. This documentation audit did not verify a runnable app or its dependency manifests.
 
 ## Baseline prerequisites
-
 - Git and a GitHub account with collaborator access.
 - Google Antigravity or another editor.
 - A local repository clone; open the **repository root**.
-- Node.js LTS **only if** the selected stack uses React/Vite.
-- Python 3 **only if** FastAPI, Odoo or Python modules are selected.
-- PostgreSQL/MySQL/Odoo dependencies **only after** selecting the exact engine/version.
+- Install only runtimes required by actual manifests/source; do not install React/Vite, FastAPI, Odoo or a local database merely because they appear as alternatives in older design notes.
+- Supabase project access may be needed to inspect remote tables/auth/RLS. Never share credentials in chat or commit them.
 
-Verify whichever tools are applicable with `git --version`, `node --version`, `npm --version` and `python --version`.
-
-## Team clone location
-
-On Windows PowerShell:
-
+## Existing clone: inspect before changing
+In PowerShell:
 ```powershell
-New-Item -ItemType Directory -Force -Path "$HOME\Documents\OdooHackathon"
-Set-Location "$HOME\Documents\OdooHackathon"
-git clone https://github.com/ChVramaraju/odoo-hackathon-2026.git
-Set-Location ".\odoo-hackathon-2026"
-git fetch origin
-git branch -a
 git status
-```
-
-Only clone if no repository copy exists at the target. Do not create a nested clone inside another repository.
-
-## Choose your branch
-
-```powershell
-git switch feature/lead-backend
-# Sanjeeth: git switch feature/sanjeeth-frontend
-# Jashwanth: git switch feature/jashwanth-database
-# Nihal: git switch feature/nihal-modules
 git branch --show-current
-git status
+git fetch origin
+git status -sb
 ```
+If the working tree is clean and tracks the intended branch, `git pull --ff-only` is safe. If it refuses or local work exists, preserve it and ask the lead; never reset, clean, overwrite or force-push.
 
-If the branch only exists remotely, run `git fetch origin` and `git switch --track origin/feature/your-branch` with your actual branch name. For an existing clone, do not clone again: check `git status` and `git branch --show-current`; run `git fetch origin` and `git status -sb`. If clean and tracking the intended remote, run `git pull --ff-only`. If this refuses or there is uncommitted work, preserve it and consult the lead. Do not reset, clean, overwrite or force push.
+## Supabase verification sequence
+1. Inspect `package.json`, lockfiles, source and server configuration to identify the actual framework, Supabase SDK and versions.
+2. Find every environment variable read by the code. Compare it with `.env.example`; use only names actually referenced by source.
+3. Inspect Supabase client initialization and determine whether calls originate in browser code or a server/backend.
+4. Inventory all Auth, table/view, RPC, Storage and Realtime calls in [API_CALL_INVENTORY.md](API_CALL_INVENTORY.md).
+5. Inspect repository migrations/config and compare them with remote schema/policies using authorized dashboard/CLI access.
+6. Verify RLS/grants and both allowed and denied access cases.
+7. Only then install missing dependencies or change setup scripts. Never create a second database to work around an uninspected existing project.
 
-## Stack-dependent setup
+## Secrets and environment
+Copy `.env.example` to an ignored local `.env` only if the code requires it. The example names are not proof that the application reads them. Never commit passwords, service-role keys or real data. Browser-visible `VITE_*` variables must never contain secrets.
 
-**Standalone frontend:** Install project-local React/Vite/Tailwind packages after the team selects the UI stack; pin dependencies and commit lockfiles. **Backend:** Create an isolated Python environment and install pinned dependencies after the API framework decision. **Local database:** Document exact version, connection setup, migrations, seed/reset, backups and test command. **Odoo:** Follow the official installation path for the required version, including PostgreSQL and module installation. Do not run arbitrary setup commands or expose database credentials.
+## Setup and verification checklist
+- [ ] Fresh clone and correct branch verified
+- [ ] Actual package manifests, runtime versions and install scripts identified
+- [ ] Environment variable names matched to source
+- [ ] Supabase client initialization and access path documented
+- [ ] Remote schema/auth/RLS inspected where access is available
+- [ ] Migrations/seed setup reproducible
+- [ ] App startup/build/test commands actually verified
+- [ ] One database-backed happy path and one denied/error path tested
+- [ ] Commands and observed results recorded in README and evaluator log
 
-## Environment and secrets
-
-Copy `.env.example` to an ignored `.env` if applicable. The template contains **candidate variables**, not proof that a service is in use. Never commit passwords, service-role keys or real datasets. Browser-visible `VITE_*` variables must not contain secrets.
-
-## Verification checklist
-
-- [ ] Fresh clone succeeds
-- [ ] Correct branch selected; working tree status known
-- [ ] Pinned application dependencies installed (after stack approval)
-- [ ] Database initializes and synthetic seeds load
-- [ ] Server/UI start commands verified
-- [ ] Main happy path and one failure case tested
-- [ ] Commands/results documented in README and evaluator log
-
-**At present only Git/repository setup commands apply; no verified application run command exists.**
+Do not publish an application start command or claim a test passed unless the relevant script was found and run.
