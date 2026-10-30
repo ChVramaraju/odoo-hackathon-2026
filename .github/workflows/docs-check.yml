@@ -1,0 +1,45 @@
+name: Repository documentation checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check required documentation files
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            README.md
+            AI_RULES.md
+            ARCHITECTURE.md
+            API_CONTRACTS.md
+            DATABASE_GUIDE.md
+            TEAM_WORKFLOW.md
+            DOMAIN_MODULES.md
+            EVALUATOR_LOG.md
+            DECISIONS.md
+            CONTRIBUTING.md
+            SECURITY.md
+            .env.example
+            .gitignore
+          )
+          for file in "${files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "::error file=$file::Missing or empty required file"
+              exit 1
+            fi
+          done
+          echo "Required preparation files are present."
