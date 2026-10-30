@@ -9,7 +9,8 @@ This document is evidence-based. Never claim code, build, test, deployment, inte
 | Public GitHub repository | Exists |
 | Documentation scaffold | Exists |
 | Four-person branch naming | Exists |
-| Docs workflow | Last audited main run passed presence checks |
+| Docs workflow | [Previously successful workflow run](https://github.com/ChVramaraju/odoo-hackathon-2026/actions/runs/41084519183) validated required files and basic relative links, not application behavior |
+| Six remote branches | Verified at the common baseline `7e8094069d6bdc3e61a83e0e17404a46733fdac8` in the synchronization audit; local clones not checked |
 | Official selected challenge | Not recorded |
 | Runnable frontend/backend | Not present in audited main |
 | Database schema/migrations | Not present |

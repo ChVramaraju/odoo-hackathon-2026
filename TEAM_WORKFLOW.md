@@ -11,11 +11,22 @@
 | `feature/jashwanth-database` | Jashwanth: schema, migrations and integrity |
 | `feature/nihal-modules` | Nihal: assigned modules and testing |
 
-During the 30 October 2026 audit, all five non-main branches pointed to an older shared commit. **Do not assume synchronization.** After approved changes, each owner should fetch and safely merge the agreed baseline, without overwriting uncommitted work or rewriting shared history.
+On 30 October 2026, all six remote branches were verified at commit `7e8094069d6bdc3e61a83e0e17404a46733fdac8`. This is a point-in-time fact, not a guarantee that future commits remain synchronized. Teammates' local Antigravity clones were not checked. Each owner must fetch, inspect local changes, and fast-forward only where safe; never overwrite or rewrite their work.
 
 ## Start-of-day protocol
 
 Each teammate uses a distinct GitHub identity and opens the **repository root** in Antigravity. Confirm branch, fetch updates and check for uncommitted work. Read [AI_RULES.md](AI_RULES.md) and assigned contracts.
+
+## Updating an existing local branch safely
+
+```powershell
+git status
+git branch --show-current
+git fetch origin
+git status -sb
+```
+
+If the working tree is clean and the current branch tracks its intended remote, use `git pull --ff-only`. If Git refuses, stop: preserve local commits and consult the team lead before merging or rebasing. Do not use `reset --hard`, force pushes, or blind branch replacements.
 
 ## Suggested eight-hour schedule (not official rules)
 

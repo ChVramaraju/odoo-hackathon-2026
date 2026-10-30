@@ -40,7 +40,7 @@ git branch --show-current
 git status
 ```
 
-If the branch only exists remotely, run `git fetch origin` and `git switch --track origin/feature/your-branch`. Before syncing `main`, confirm uncommitted work is safe; coordinate merges with branch owners. Do not force push.
+If the branch only exists remotely, run `git fetch origin` and `git switch --track origin/feature/your-branch` with your actual branch name. For an existing clone, do not clone again: check `git status` and `git branch --show-current`; run `git fetch origin` and `git status -sb`. If clean and tracking the intended remote, run `git pull --ff-only`. If this refuses or there is uncommitted work, preserve it and consult the lead. Do not reset, clean, overwrite or force push.
 
 ## Stack-dependent setup
 

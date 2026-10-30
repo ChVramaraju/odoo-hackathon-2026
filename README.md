@@ -4,7 +4,7 @@
 
 ## Event and submission
 
-Four-person team preparing for the **Odoo × CUSAT Make-A-Ton 9.0 virtual qualifier**, 31 October 2026, 9:00 AM–5:00 PM IST. The official participant guidance calls for a single branch containing the final solution, with the team lead submitting a GitHub repository link and a publicly accessible solution video. Organizer-video notes also report a preference for local persistence, custom APIs, dynamic data and meaningful contributions from all four participants; confirm whether each is a mandatory rule before finalizing the stack.
+Four-person team preparing for the **Odoo × CUSAT Make-A-Ton 9.0 virtual qualifier**, 31 October 2026, 9:00 AM–5:00 PM IST. Participant guidance supplied to the team describes a single final solution branch, a repository link, and a publicly accessible solution video. The original organizer document/URL is not archived in this repository; the lead must reconfirm the current requirements before submission. Organizer-video notes also report a preference for local persistence, custom APIs, dynamic data and meaningful contributions from all four participants; confirm whether each is a mandatory rule before finalizing the stack.
 
 **The event name does not by itself require an Odoo-native module.**
 
@@ -32,7 +32,7 @@ Default engineering preference, if allowed: a **modular monolith**, one authorit
 - Documentation, templates and one documentation-check workflow exist.
 - **No** frontend, backend, Odoo module, migration or executable solution has been verified.
 - No final domain model, endpoints, application start command or deployment are available yet.
-- `main` and the five working branches were at different commits during the 30 October 2026 audit; they require safe synchronization after approved changes.
+- All six remote branches were verified at the same documentation commit `7e8094069d6bdc3e61a83e0e17404a46733fdac8` in the 30 October 2026 audit. This is a historical snapshot: local clones and future branch commits must be checked independently.
 
 ## Documentation
 
@@ -58,6 +58,19 @@ Default engineering preference, if allowed: a **modular monolith**, one authorit
 4. Develop on individual feature branches, integrating and testing early.
 5. Consolidate all submitted solution code into one identified final branch, intended to be `main` unless organizers specify otherwise.
 6. Test clean setup and the demo, prepare an accessible video and submit the required links.
+
+## Working safely in your local clone
+
+Open the repository root in Antigravity. Before editing, check:
+
+```powershell
+git status
+git branch --show-current
+git fetch origin
+git status -sb
+```
+
+If the worktree is clean and tracking the correct remote branch, `git pull --ff-only` is a safe fast-forward-only update. If it refuses, preserve local work and ask the lead to help resolve divergence; never reset or force-push. The commands above are reviewed by inspection, not executed on teammates' machines. See [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ## Branch ownership
 

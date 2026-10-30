@@ -21,10 +21,11 @@ Important decisions must have an owner, status, alternatives, rationale and cons
 
 ## D-003 — Single submission branch
 - **Date:** 2026-10-30
-- **Status:** Accepted as documented participant requirement, subject to official portal details
+- **Status:** Team-adopted based on previously supplied participant guidance; current official source/URL not archived in repository
 - **Owner:** Team lead
 - **Decision:** Keep individual feature branches during development, then consolidate final code on one branch (team intent: `main`) and submit that repository plus the required video.
 - **Risk:** Last-minute merge conflicts; integrate early and reserve submission time.
+- **Verification needed:** Reconfirm final branch, video visibility and deadline from official organizer materials before submission.
 
 ## D-004 — Contract-first teamwork
 - **Date:** 2026-10-30
