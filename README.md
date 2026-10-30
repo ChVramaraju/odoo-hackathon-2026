@@ -34,6 +34,7 @@ Avoid adding every technology by default. If the challenge requires building an 
 ## Repository map
 
 - [SETUP_GUIDE.md](SETUP_GUIDE.md) — tools to install, what is optional, cloning, and branch checkout
+- [ANTIGRAVITY_SETUP_PROMPTS.md](ANTIGRAVITY_SETUP_PROMPTS.md) — shared baseline plus four role-specific laptop setup/audit prompts
 - [AI_RULES.md](AI_RULES.md) — shared instructions for AI coding assistants, including Antigravity
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component boundaries and data flow
 - [API_CONTRACTS.md](API_CONTRACTS.md) — API conventions and integration agreements
