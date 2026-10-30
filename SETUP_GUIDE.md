@@ -1,99 +1,63 @@
-# Developer Setup Guide
+# Reproducible Developer Setup — Windows First
 
-This is the shared setup plan for the team. Install only the tools required for the chosen implementation. The official hackathon brief takes precedence over this proposed stack.
+**Preparation-only:** No application dependency manifests or startup scripts exist yet. Do not install every candidate framework before the official problem and stack are confirmed.
 
-## 1. Required for the proposed web stack
+## Baseline prerequisites
 
-### Google Antigravity IDE
-Install the IDE version matching your operating system from the official [Antigravity download page](https://antigravity.google/download). All teammates should open the repository folder in Antigravity and read AI_RULES.md before asking an agent to edit files.
+- Git and a GitHub account with collaborator access.
+- Google Antigravity or another editor.
+- A local repository clone; open the **repository root**.
+- Node.js LTS **only if** the selected stack uses React/Vite.
+- Python 3 **only if** FastAPI, Odoo or Python modules are selected.
+- PostgreSQL/MySQL/Odoo dependencies **only after** selecting the exact engine/version.
 
-### Git
-Install Git from the official [Git downloads page](https://git-scm.com/install/). Git is required for cloning, branches, commits, and pushing to GitHub.
+Verify whichever tools are applicable with `git --version`, `node --version`, `npm --version` and `python --version`.
 
-### Node.js LTS (includes npm)
-Install a currently supported LTS release from [nodejs.org](https://nodejs.org/en/download/). Node.js/npm are needed for the proposed React, TypeScript, Vite, Tailwind CSS, and frontend test toolchain. Use the same supported Node major version across the team.
+## Team clone location
 
-Verify:
-```bash
-git --version
-node --version
-npm --version
-```
+On Windows PowerShell:
 
-### GitHub access
-Sign in to GitHub and ensure you have repository collaborator access. The repository owner should use the GitHub account invited to the project. Do not share passwords or tokens with teammates or AI assistants.
-
-## 2. Needed only if selected by the final architecture
-
-### Python
-Install a currently supported Python 3 release from [python.org](https://www.python.org/downloads/) only if we implement a FastAPI/Python backend, Python scripts, or Python-based AI/ML logic. Create a virtual environment per the backend README once backend code exists.
-
-Verify:
-```bash
-python --version
-```
-On some systems, use `python3 --version` or `py --version`.
-
-### Supabase
-Create a project at [supabase.com](https://supabase.com/) if the team confirms Supabase for hosted PostgreSQL, authentication, storage, or realtime features. No desktop app is required to use hosted Supabase; it is managed online.
-
-The Supabase CLI is useful for versioned migrations and local development. Follow the [official CLI setup guide](https://supabase.com/docs/guides/local-development/cli/getting-started). Local Supabase development requires a compatible container runtime such as Docker Desktop; install it only if we need the full local Supabase stack.
-
-### Odoo development tools
-If the official brief requires an Odoo module or Odoo server integration, follow the official documentation for the target Odoo version and its Python/system dependencies. Do not install an arbitrary Odoo version before confirming the challenge's required version and deployment environment.
-
-## 3. What does NOT need a separate download right now
-
-- **React, Vite, TypeScript, Tailwind CSS, shadcn/ui:** these are installed as project dependencies with npm when the frontend is scaffolded. Do not install them globally.
-- **FastAPI, Pydantic, SQLAlchemy, Pytest:** these are Python project dependencies only if a Python backend is selected.
-- **Supabase hosted database:** managed online service; CLI/container runtime are needed only for specific local workflows.
-- **Playwright and Vitest:** add as project dependencies when the frontend and test strategy are set.
-- **API keys:** do not create provider keys until the relevant integration is required. Store secrets locally, never in Git.
-
-## 4. Clone and open the repository
-
-Open a terminal and run:
-```bash
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\Documents\OdooHackathon"
+Set-Location "$HOME\Documents\OdooHackathon"
 git clone https://github.com/ChVramaraju/odoo-hackathon-2026.git
-cd odoo-hackathon-2026
-git branch --all
-```
-
-Then open the folder in Antigravity. Before implementation begins, read README.md, TEAM_WORKFLOW.md, and AI_RULES.md.
-
-## 5. Check out your assigned branch
-
-Use the branch assigned to you:
-
-Team lead:
-```bash
-git switch feature/lead-backend
-```
-
-Sanjeeth:
-```bash
-git switch feature/sanjeeth-frontend
-```
-
-Jashwanth:
-```bash
-git switch feature/jashwanth-database
-```
-
-Nihal:
-```bash
-git switch feature/nihal-modules
-```
-
-If a branch is not present locally after cloning, refresh remote branch references:
-```bash
+Set-Location ".\odoo-hackathon-2026"
 git fetch origin
-git switch --track origin/feature/your-branch-name
+git branch -a
+git status
 ```
-Replace the branch name with the exact branch assigned to you. Do not commit directly to main for ordinary feature work.
 
-## 6. Current readiness
+Only clone if no repository copy exists at the target. Do not create a nested clone inside another repository.
 
-The repository currently contains documentation, templates, and a documentation-presence workflow. It does **not** yet contain a frontend package.json, backend dependency file, database schema, deployment config, or runnable application. Therefore, there are no application start commands yet.
+## Choose your branch
 
-After the official problem statement is confirmed, the team should scaffold only the selected application components, pin dependency versions, add lockfiles, write actual setup commands, and verify them from a clean clone.
+```powershell
+git switch feature/lead-backend
+# Sanjeeth: git switch feature/sanjeeth-frontend
+# Jashwanth: git switch feature/jashwanth-database
+# Nihal: git switch feature/nihal-modules
+git branch --show-current
+git status
+```
+
+If the branch only exists remotely, run `git fetch origin` and `git switch --track origin/feature/your-branch`. Before syncing `main`, confirm uncommitted work is safe; coordinate merges with branch owners. Do not force push.
+
+## Stack-dependent setup
+
+**Standalone frontend:** Install project-local React/Vite/Tailwind packages after the team selects the UI stack; pin dependencies and commit lockfiles. **Backend:** Create an isolated Python environment and install pinned dependencies after the API framework decision. **Local database:** Document exact version, connection setup, migrations, seed/reset, backups and test command. **Odoo:** Follow the official installation path for the required version, including PostgreSQL and module installation. Do not run arbitrary setup commands or expose database credentials.
+
+## Environment and secrets
+
+Copy `.env.example` to an ignored `.env` if applicable. The template contains **candidate variables**, not proof that a service is in use. Never commit passwords, service-role keys or real datasets. Browser-visible `VITE_*` variables must not contain secrets.
+
+## Verification checklist
+
+- [ ] Fresh clone succeeds
+- [ ] Correct branch selected; working tree status known
+- [ ] Pinned application dependencies installed (after stack approval)
+- [ ] Database initializes and synthetic seeds load
+- [ ] Server/UI start commands verified
+- [ ] Main happy path and one failure case tested
+- [ ] Commands/results documented in README and evaluator log
+
+**At present only Git/repository setup commands apply; no verified application run command exists.**

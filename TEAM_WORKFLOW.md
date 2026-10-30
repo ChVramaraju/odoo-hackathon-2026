@@ -1,73 +1,47 @@
-# Team Workflow
+# Four-Person Development and Git Workflow
 
-## Roles and ownership
+## Branch ownership
 
-| Teammate | Primary area | Expected outputs |
-|---|---|---|
-| Team lead / repository owner | Architecture, backend, API/business logic, integration | Architecture decisions, API contracts, backend workflows, integration tests, end-to-end coordination |
-| Sanjeeth | Frontend and UI/UX | Responsive accessible UI, reusable components, API integration, UI tests |
-| Jashwanth | Database | Schema, migrations, constraints, RLS/policies, seed data, integrity tests |
-| Nihal | Supporting modules | Scoped features identified from requirements, integrations, tests, docs, and gap-filling agreed with the team |
-
-Ownership is a coordination aid, not a reason to block necessary collaboration. Agree cross-cutting changes with the relevant owner. Replace names with GitHub handles if helpful.
-
-## Before coding
-1. Read the README and relevant guidance documents.
-2. Extract the actual problem statement, constraints, judging criteria, and submission requirements.
-3. Define one minimal end-to-end demo journey and its acceptance criteria.
-4. Agree API contracts and data entities before parallel implementation.
-5. Assign each task one owner and a clear completion definition.
-
-## Branches created
-
-All five working branches were created from `main` as a starting point. These branches currently contain the same baseline documentation; they are ready for their owners to begin work.
-
-| Branch | Intended use / owner |
+| Branch | Purpose |
 |---|---|
-| `main` | Stable, presentable baseline; merge completed and reviewed work here |
-| `integration` | Team integration/testing branch; merge feature PRs here first if using this workflow |
-| `feature/lead-backend` | Team lead — backend, APIs, business logic, integration tests |
-| `feature/sanjeeth-frontend` | Sanjeeth — frontend/UI and API integration |
-| `feature/jashwanth-database` | Jashwanth — schema, migrations, constraints, RLS/policies |
-| `feature/nihal-modules` | Nihal — scoped supporting module(s), testing, docs, or integration tasks |
+| `main` | Stable evaluator-facing baseline, intended final submission |
+| `integration` | Optional integration/testing |
+| `feature/lead-backend` | Lead: APIs, backend and architecture |
+| `feature/sanjeeth-frontend` | Sanjeeth: UI, deployment and frontend integration |
+| `feature/jashwanth-database` | Jashwanth: schema, migrations and integrity |
+| `feature/nihal-modules` | Nihal: assigned modules and testing |
 
-Do not have several people commit to the same feature branch at once. Each teammate should clone the repository, check out their own branch, and push their work there. Use pull requests so changes can be reviewed before merging.
+During the 30 October 2026 audit, all five non-main branches pointed to an older shared commit. **Do not assume synchronization.** After approved changes, each owner should fetch and safely merge the agreed baseline, without overwriting uncommitted work or rewriting shared history.
 
-## Recommended merge flow
+## Start-of-day protocol
 
-1. Individual owner works on their feature branch and pushes meaningful commits.
-2. Open a pull request from the feature branch into `integration` when cross-feature integration is needed; otherwise open a focused PR into `main` for a small independent change.
-3. Test the combined journey on `integration`.
-4. After review and successful checks, open/merge a PR from `integration` into `main`.
-5. Keep `main` presentable for evaluator review and demo.
+Each teammate uses a distinct GitHub identity and opens the **repository root** in Antigravity. Confirm branch, fetch updates and check for uncommitted work. Read [AI_RULES.md](AI_RULES.md) and assigned contracts.
 
-If the event timeline is very short, a simpler feature-branch-to-main PR flow may be safer than maintaining an extra integration branch. Do not merge untested or conflicting changes just to show activity.
+## Suggested eight-hour schedule (not official rules)
 
-## Commits and hourly cadence
+| Time (IST) | Goal |
+|---|---|
+| 09:00–09:30 | Select official challenge and MVP |
+| 09:30–10:15 | Agree stack, entities, contracts and ownership |
+| 10:15–13:00 | Parallel implementation; first end-to-end integration |
+| 13:00–15:00 | Complete essential features and error handling |
+| 15:00–16:00 | Fresh-start verification and demo rehearsal |
+| 16:00–17:00 | Merge final branch, record video and submit with buffer |
 
-Each teammate must push meaningful work at least once every hour while actively working, per the team requirement. Good updates include a tested component, an agreed migration, a documented API, a bug fix, a test, or a clear integration improvement. Do not use empty commits, meaningless whitespace changes, or untested broken changes to game contribution history.
+## Task and review discipline
 
-Suggested commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
+Every work item has one owner, requirement reference, acceptance criteria and tests. Commit meaningful progress, not empty commits. Use focused PRs into `integration` or directly into `main` as appropriate. Describe tests actually run, schema/contract changes, risks and screenshots where relevant. Never merge broken work to simulate contribution.
 
-## Pull requests
+## Final single-branch submission
 
-Each PR should include:
-- Problem/requirement addressed
-- What changed
-- How to test it
-- Screenshots or a short demo note for visible UI changes
-- Schema/configuration changes
-- Known limitations and follow-ups
+1. Confirm the branch accepted by organizers (team intent: `main`).
+2. Bring all approved features together through reviewed merges, preserving individual authorship.
+3. Verify installation, application startup, dynamic database-backed behavior and known limitations.
+4. Ensure the public video and code link are accessible.
+5. Lead submits required links according to official rules.
 
-Keep PRs focused. Request a review from the relevant owner. Resolve conflicts and verify the combined flow before merging. Do not merge code that breaks the agreed demo path.
+Development branches may remain for history but must not be needed to reconstruct the submitted application. Never reset or force-push teammates' branches.
 
-## Antigravity collaboration
+## Handoffs
 
-Each teammate may use a separate Antigravity account/assistant. Keep shared instructions in AI_RULES.md and contracts in this repository so assistants do not depend on private chat context. AI-generated changes must be reviewed and tested by the human contributor who submits them.
-
-## Evaluator-facing hygiene
-
-- Follow organizer instructions for evaluator access and repository visibility.
-- Keep README and EVALUATOR_LOG.md factual and current.
-- Show real progress, actual tests, known limitations, and demo steps.
-- Do not commit credentials, private user data, or misleading claims.
+Post blockers with owner, affected requirement, reproduction and decision needed. Record meaningful choices in [DECISIONS.md](DECISIONS.md), actual verification in [EVALUATOR_LOG.md](EVALUATOR_LOG.md). AI tools must not assume teammates share private chat context.

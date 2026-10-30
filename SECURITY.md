@@ -1,27 +1,32 @@
-# Security Policy
+# Security and Privacy Baseline
 
-## Scope
-This is a hackathon project. Security measures should match the actual features and data handled, and must not be represented as a formal audit or certification.
+This is a hackathon project, not a formally audited or certified system.
 
-## Reporting a concern
-Tell the team lead privately about suspected exposed credentials, authorization flaws, unsafe data handling, or dependency vulnerabilities. Do not publish live secrets or sensitive personal information in a public issue.
+## Secrets and credentials
 
-## Secret handling
-- Keep local credentials in an ignored `.env` file or an approved secret manager.
-- Commit only placeholder variable names in `.env.example`.
-- Rotate any credential that is accidentally exposed; deleting a file in a later commit does not remove it from Git history.
-- Do not put server-side secrets in frontend variables or bundles.
-- Never share passwords or tokens in chat, screenshots, issues, or commits.
+Never commit `.env`, database passwords, private keys, API tokens, service-role credentials or real participant data. Use ignored local configuration and approved secret stores. A key exposed in Git history must be rotated, not merely deleted from the latest commit. Frontend variables (including `VITE_*`) are public.
 
-## Access and data
-- Enforce permissions on the server and/or through correctly tested database policies.
-- Use least-privilege credentials and synthetic demo data.
-- Validate inputs and avoid logging secrets or sensitive payloads.
-- Use payment, AI, or other provider sandbox modes when available.
-- Follow event rules and applicable requirements for any personal or regulated data.
+## Authorization and validation
 
-## Before demo/submission
-- [ ] Check repository history and current files for accidental secrets.
-- [ ] Verify authorization for each role and protected operation.
-- [ ] Confirm no production credentials or private datasets are bundled.
-- [ ] Document known security limitations honestly.
+Enforce user/role access at trusted server boundaries, or through properly tested Odoo access/record rules. If Supabase is selected, enforce and test RLS. Treat UI hiding as convenience, not security. Validate inputs, use ORM/parameterized access and document transaction consistency where needed.
+
+## Privacy and logs
+
+Use synthetic development/demo records. Minimize collection; do not log secrets, private payloads, access tokens or sensitive customer data. Define deletion and retention policies when the actual domain requires them.
+
+## Dependencies and integration
+
+Use maintained dependencies after the stack is chosen, pin versions, avoid unnecessary network providers, protect server-side integrations and handle failures without exposing internal stack traces.
+
+## Reporting concerns
+
+Raise suspected exposed credentials or authorization flaws privately with the lead. Never post secrets to a public issue, screenshot, chat or commit.
+
+## Submission review
+
+- [ ] Secrets checked in current files and relevant history
+- [ ] Browser bundle contains no server credentials
+- [ ] Allowed and forbidden roles tested
+- [ ] Inputs and failure paths validated
+- [ ] Synthetic/demo data verified
+- [ ] Known security limitations disclosed honestly

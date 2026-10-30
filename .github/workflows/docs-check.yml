@@ -16,30 +16,36 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Check required documentation files
+      - name: Check required docs and relative links
         shell: bash
         run: |
           set -euo pipefail
-          files=(
-            README.md
-            AI_RULES.md
-            ARCHITECTURE.md
-            API_CONTRACTS.md
-            DATABASE_GUIDE.md
-            TEAM_WORKFLOW.md
-            DOMAIN_MODULES.md
-            EVALUATOR_LOG.md
-            DECISIONS.md
-            CONTRIBUTING.md
-            SECURITY.md
-            .env.example
-            .gitignore
-          )
-          for file in "${files[@]}"; do
-            if [[ ! -s "$file" ]]; then
-              echo "::error file=$file::Missing or empty required file"
-              exit 1
-            fi
-          done
-          echo "Required preparation files are present."
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import re
+          required = [
+              'README.md', 'AI_RULES.md', 'ARCHITECTURE.md',
+              'API_CONTRACTS.md', 'DATABASE_GUIDE.md', 'TEAM_WORKFLOW.md',
+              'DOMAIN_MODULES.md', 'EVALUATOR_LOG.md', 'DECISIONS.md',
+              'SETUP_GUIDE.md', 'CONTRIBUTING.md', 'SECURITY.md',
+              '.env.example', '.gitignore'
+          ]
+          missing = [n for n in required if not Path(n).is_file() or not Path(n).read_text(encoding='utf-8').strip()]
+          if missing:
+              raise SystemExit('Missing or empty files: ' + ', '.join(missing))
+          errors = []
+          for md in Path('.').rglob('*.md'):
+              if '.git' in md.parts:
+                  continue
+              content = md.read_text(encoding='utf-8')
+              for target in re.findall(r'(?<!!)\[[^\]]+\]\(([^)]+)\)', content):
+                  target = target.split('#', 1)[0]
+                  if not target or '://' in target or target.startswith(('mailto:', '#')):
+                      continue
+                  target = target.split(' ', 1)[0].strip('<>')
+                  if not (md.parent / target).exists():
+                      errors.append(f'{md}: broken link {target}')
+          if errors:
+              raise SystemExit('\n'.join(errors))
+          print('Required docs and basic local links verified.')
+          PYCODE

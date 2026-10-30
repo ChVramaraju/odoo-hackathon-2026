@@ -1,27 +1,46 @@
-# Evaluator Progress Log
+# Evaluator Progress and Verification Log
 
-Keep this log concise, factual, and updated as meaningful milestones are completed. Do not claim a feature, test, deployment, or integration is complete until it has been verified.
+This document is evidence-based. Never claim code, build, test, deployment, integration or assessment outcomes without actual proof.
 
-## Current snapshot
-- **Project:** preparation repository for Odoo Hackathon 2026
-- **Problem statement:** not yet recorded in this repository
-- **Implementation status:** initial project documentation and collaboration scaffold committed
-- **Current demo path:** not defined yet; product requirements are pending
-- **Known blockers:** add the official problem statement, platform constraints, judging criteria, and submission instructions before locking the application stack
-- **Verification:** key documentation files and the GitHub Actions workflow were fetched from the repository; the workflow itself has not yet been observed running successfully
+## Snapshot — 30 October 2026
 
-## Update template
-### YYYY-MM-DD HH:MM UTC — milestone
-- **Delivered:** concrete files/features completed
-- **Evidence:** commit/PR, test output, screenshot, or demo steps
-- **Verified:** commands and checks actually run
-- **Limitations/blockers:** known gaps and next action
-- **Owner(s):** team members responsible
+| Item | Verified status |
+|---|---|
+| Public GitHub repository | Exists |
+| Documentation scaffold | Exists |
+| Four-person branch naming | Exists |
+| Docs workflow | Last audited main run passed presence checks |
+| Official selected challenge | Not recorded |
+| Runnable frontend/backend | Not present in audited main |
+| Database schema/migrations | Not present |
+| Real end-to-end flow | Not demonstrated |
+| Live deployment/video | Not verified |
 
-## Milestones
-- [x] Initial preparation documentation and collaboration templates committed.
-- [x] Basic documentation-presence workflow added.
-- [ ] Official problem statement and judging criteria recorded.
-- [ ] MVP implementation started.
-- [ ] End-to-end validation completed.
-- [ ] Demo and submission preparation completed.
+The existing GitHub Actions documentation check does not establish application test or security correctness.
+
+## Proof record template
+
+```text
+Date / time (include timezone):
+Owner and requirement:
+What changed:
+Commit / PR / link:
+Commands actually run:
+Observed result:
+Tests passed / failed / not run:
+Screenshots or demo evidence:
+Limitations / blockers:
+Next checkpoint and owner:
+```
+
+## Milestone checklist
+
+- [x] Preparation repository and documentation created
+- [x] Documentation check workflow configured and previously observed passing
+- [ ] Official challenge and final technical requirements selected
+- [ ] First end-to-end vertical slice working with real persistence
+- [ ] Negative-path tests and clean setup verified
+- [ ] All code consolidated in one submission branch
+- [ ] Video link accessible, submission confirmed
+
+Avoid artificial progress claims; evidence matters more than document length.

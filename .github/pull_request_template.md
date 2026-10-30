@@ -1,24 +1,23 @@
-## What problem or requirement does this address?
-<!-- Link the issue/task or quote the acceptance criterion. -->
+## Requirement / issue
 
-## What changed?
--
+## Summary and owner
 
-## How was it tested?
-- [ ] Automated tests
-- [ ] Manual verification
-- [ ] Not run (explain why)
+## Base and source branches
 
-Commands/results:
--
+## Files / modules changed
 
-## Integration notes
-- API/schema/config changes:
-- Setup or migration steps:
-- Screenshots/demo notes (for UI changes):
+## API, database or configuration changes
 
-## Checklist
-- [ ] Change is scoped and reviewed
-- [ ] Documentation updated where needed
-- [ ] No secrets or private data included
-- [ ] Known limitations are documented
+## Tests actually run and outcomes
+- [ ] Checks passed
+- [ ] Known failures or untested areas listed
+
+## Demo path / screenshots
+
+## Security and data review
+- [ ] No credentials, sensitive data or private records
+- [ ] Authorization and validation considered
+
+## Risks / known limitations
+
+## Reviewers and integration notes

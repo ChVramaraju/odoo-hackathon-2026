@@ -1,27 +1,21 @@
 ---
 name: Bug report
-about: Report a reproducible defect
-title: "bug: "
+about: Report reproducible, verified behavior
+title: "fix: "
 labels: bug
 assignees: ""
 ---
 
-## Summary
-A clear description of the problem.
-
-## Steps to reproduce
-1.
-2.
-3.
+## Actual behavior
 
 ## Expected behavior
 
-## Actual behavior
+## Reproduction steps
 
-## Environment
-- Branch/commit:
-- Browser/OS or runtime:
-- Relevant configuration (never include secrets):
+## Environment / branch / commit
 
-## Evidence
-Logs, screenshots, or test output with private data and tokens removed.
+## Supporting logs or screenshots (remove secrets)
+
+## Severity and affected user workflow
+
+## Assigned owner and verification plan

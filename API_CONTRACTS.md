@@ -1,47 +1,47 @@
-# API Contracts
+# API and Integration Contracts
 
-## Status
-No product endpoints are defined yet because the official problem statement is not recorded. Do not implement invented endpoints. Agree on each endpoint's purpose and request/response shape before parallel UI and backend work.
+**Status:** No domain endpoints have been agreed or implemented. Do not invent endpoints before selecting the official challenge.
 
-## Conventions for custom HTTP APIs
-- Base path: `/api/v1`
-- Use nouns for resource paths and HTTP verbs for actions.
-- Use JSON unless the endpoint needs uploads, downloads, or streaming.
-- Use ISO 8601 timestamps with timezone information; use UTC for server-side storage where practical.
-- Validate request bodies, path parameters, query parameters, and authorization.
-- Return only fields the caller is permitted to see.
-- Never rely on frontend checks as the authorization boundary.
+## Proposed standalone HTTP conventions
 
-## Suggested response shapes
-Success responses should be resource-oriented and documented per endpoint. For errors, use a stable shape such as:
+- Base path: `/api/v1` where custom REST APIs are appropriate.
+- JSON requests/responses; ISO 8601 timestamps with timezone; stable IDs.
+- HTTP status semantics: 200/201 success, 400 malformed, 401 unauthenticated, 403 forbidden, 404 missing, 409 conflict, 422 validation if chosen consistently, 500 unexpected.
+- Validate body, path and query values. Enforce authentication and authorization server-side.
+- Return actionable errors without stack traces, SQL details or secrets.
+
+Example error contract (proposal only):
+
 ```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "A human-readable explanation",
-    "details": []
-  }
-}
+{"error":{"code":"VALIDATION_ERROR","message":"Please correct the highlighted fields.","details":[]}}
 ```
-Do not expose stack traces, secrets, SQL errors, or internal provider responses to users.
 
-## Contract template
-For every endpoint, document:
-- Method and path
-- Purpose and owning teammate
-- Authentication/authorization requirements
-- Request fields, types, constraints, and example
-- Success status and response example
-- Expected validation/business errors
-- Data entities touched
-- Tests and integration status
+## Endpoint template
 
-## Integration rules
-1. Team lead and frontend owner agree the contract before implementation begins.
-2. Database owner confirms required entities and constraints.
-3. Breaking changes are announced and recorded before merging.
-4. Use stable IDs and explicit enum values; do not make the UI infer business meaning from display labels.
-5. Do not claim an endpoint exists until it is implemented and tested.
+```text
+Requirement ID:
+Owner:
+Method and path:
+Purpose:
+Authentication / allowed roles:
+Request fields, constraints and synthetic example:
+Success status and response:
+Failure status / error codes:
+Entities read or changed:
+Transaction and idempotency needs:
+Contract tests and evidence:
+```
 
-## Supabase usage
-For simple direct client operations, use only the public/anon key and enforce appropriate Row Level Security (RLS) policies. Any service-role key or privileged workflow belongs on a trusted server. Do not duplicate business logic across Supabase client calls and FastAPI.
+## Integration policy
+
+The lead and Sanjeeth confirm the UI/API contract; Jashwanth confirms schema effects. Any breaking schema or API change needs review and updated examples/tests before merge. Use synthetic examples only. Do not claim an endpoint exists until demonstrated.
+
+## Odoo-native adaptation
+
+Use supported Odoo controller methods, models and ORM APIs where appropriate. Document groups, record rules, model methods and inter-module contracts. Do not impose `/api/v1` on an Odoo-native implementation without a real requirement.
+
+## Contract inventory
+
+| Interface | Owner | Status | Evidence |
+|---|---|---|---|
+| Pending official brief | TBD | Not defined | None |

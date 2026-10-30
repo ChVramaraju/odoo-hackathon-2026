@@ -1,42 +1,49 @@
-# Database Guide
+# Database and Data Integrity Guide
 
-## Status
-Supabase/PostgreSQL is the proposed default, subject to event requirements. No domain schema is prescribed until the problem statement is known.
+**Status:** No database engine, domain tables or migrations are implemented. Supabase/PostgreSQL was an early proposal, not a final decision. Organizer-video notes reportedly favor a local database; verify whether mandatory.
 
-## Schema principles
-- Model the domain from confirmed requirements; avoid speculative tables.
-- Use primary keys, foreign keys, NOT NULL, UNIQUE, CHECK constraints, and indexes where they enforce real invariants or query needs.
-- Choose types intentionally; do not store structured relationships as comma-separated strings.
-- Decide deletion behavior explicitly (restrict, cascade, or soft-delete) based on business rules.
-- Store timestamps consistently and define who may create, read, update, and delete each record.
-- Add indexes based on expected access patterns, not indiscriminately.
+## Database decision gate
 
-## Migrations
-- Store ordered SQL migrations in `supabase/migrations/` if Supabase is selected.
-- Treat applied migrations as immutable; add a new migration to change schema.
-- Review destructive changes with the team lead and data owner before applying.
-- Test migrations against a development project and document required setup.
-- Never put real credentials or production data in migration files.
-- Coordinate schema changes with API contracts before merging.
+| Candidate | Select when | Important detail |
+|---|---|---|
+| Odoo PostgreSQL + ORM | Official brief requires Odoo-native | Respect mandated version, access controls and record rules |
+| Local PostgreSQL | Standalone app allowed and team can set it up | Test actual local connection and migrations |
+| Local MySQL | Official guidance or team experience favors it | Verify driver, SQL dialect and migration tooling |
+| Supabase/managed PostgreSQL | Permitted and demonstrably useful | Network availability and RLS/authorization are critical |
 
-## Row Level Security (RLS)
-- Enable RLS on tables exposed through Supabase's client-facing APIs.
-- Add explicit policies for each required operation and role.
-- Test both permitted and denied access cases.
-- Do not use a service-role key in frontend code; it bypasses normal RLS protections.
-- Do not treat a hidden UI button as access control.
+The lead and Jashwanth record the final engine/version in [DECISIONS.md](DECISIONS.md) before implementing schema.
 
-## Data quality and privacy
-- Validate critical invariants in the database as well as the application layer where appropriate.
-- Use synthetic sample data in development and demos.
-- Collect only data needed for the challenge.
-- Avoid logging tokens, secrets, or sensitive records.
-- Document seed data and reset steps when the application is implemented.
+## Modeling procedure
 
-## Database change checklist
-- [ ] Requirement and owning module are clear.
-- [ ] Schema and constraints reviewed by database owner.
-- [ ] API/UI contract impacts are communicated.
-- [ ] Migration is ordered and reproducible.
-- [ ] RLS/policies and denied-access cases are tested where applicable.
-- [ ] Rollback or recovery approach is understood for risky changes.
+1. Extract entities and relationships from the selected challenge and primary user journey.
+2. Define ownership, roles, allowed operations, required attributes and stable IDs.
+3. Add primary/foreign keys, uniqueness, nullability, check constraints and deletion behavior.
+4. Plan transactions for multi-step writes and indexes for actual query paths.
+5. Review entities with API and UI owners before versioning migrations.
+6. Add synthetic seed data, clean initialization and repeatable reset procedures.
+
+## Schema and migrations
+
+- Never fabricate an ER diagram without domain requirements.
+- Keep migrations ordered and reproducible; create new migrations rather than silently editing applied ones.
+- Review destructive changes; document recovery and backup expectations.
+- Use constraints even when frontend validation exists.
+- Avoid comma-separated relationships and speculative indexes.
+- Keep credentials only in ignored local environment or approved secret storage.
+
+## Authorization
+
+Standalone APIs: enforce database access through trusted backend processes and role checks. Odoo: groups, access rights and record rules. Supabase, only if selected: enable/test RLS for client-visible tables and never expose service-role keys.
+
+## Test evidence to capture
+
+| Check | Required evidence |
+|---|---|
+| Initialization | Fresh database setup command and result |
+| Integrity | Invalid duplicate/foreign-key data rejected |
+| Transaction | Partial failure leaves consistent data |
+| Authorization | Allowed and denied access verified |
+| Migrations | Fresh installation and change path tested |
+| Demo data | Synthetic seeds and reset are reproducible |
+
+All checks are currently pending.

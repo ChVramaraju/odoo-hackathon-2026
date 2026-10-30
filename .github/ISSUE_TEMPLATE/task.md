@@ -1,22 +1,22 @@
 ---
 name: Task / feature
-about: Propose a scoped task linked to the hackathon requirements
+about: Scoped work linked to a confirmed hackathon requirement
 title: "task: "
 labels: task
 assignees: ""
 ---
 
-## Requirement / user problem
-What confirmed requirement does this address?
+## Official requirement / user value
+
+## Primary owner
 
 ## Acceptance criteria
 - [ ] Given ..., when ..., then ...
 
-## Owner
-One primary owner:
+## Scope and dependencies
 
-## Dependencies / contracts
-API, database, UI, or external service coordination needed:
+## API / schema / UI contracts
 
-## Definition of done
-Tests, documentation, demo evidence, and integration expectations:
+## Verification and definition of done
+
+## Evidence and status

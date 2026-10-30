@@ -1,29 +1,34 @@
-# Contributing
+# Contributing to the Odoo Hackathon Repository
 
-## First steps
-1. Read README.md and TEAM_WORKFLOW.md.
-2. Read AI_RULES.md before asking an AI assistant to modify project files.
-3. Check DOMAIN_MODULES.md for confirmed requirements and assigned tasks.
-4. Ask the task owner before changing a shared API contract, database schema, or architectural decision.
+## Before making changes
 
-## Development expectations
-- Keep changes focused and explain why they are needed.
-- Follow existing formatting, naming, and error-handling patterns.
-- Add or update tests for behavior changes.
-- Update documentation when setup, contracts, environment variables, or user flows change.
-- Never commit secrets or real user data.
-- Do not claim a check passed unless it was run.
+Read [README.md](README.md), [AI_RULES.md](AI_RULES.md), [TEAM_WORKFLOW.md](TEAM_WORKFLOW.md) and assigned contracts. Confirm the official problem, branch, task owner and acceptance criteria.
 
-## Pull request checklist
-- [ ] Linked to a requirement or task
-- [ ] Scope and behavior described
-- [ ] Tests added/updated and run where applicable
-- [ ] API/schema/config changes documented
-- [ ] No secrets, generated junk, or unrelated formatting churn
-- [ ] Main demo journey remains functional or impact is clearly explained
+## Branch and change policy
 
-## Commit message examples
-- `docs: document database migration workflow`
-- `feat: add primary user workflow`
-- `fix: handle expired session response`
-- `test: cover authorization failure`
+Use your own GitHub identity and assigned feature branch. Keep commits focused, meaningful and attributable; never fabricate commits. Coordinate before editing another owner's schema, API or architecture. Do not force-push shared branches, rewrite history or commit directly to `main` without lead approval.
+
+## Definition of done
+
+- Code addresses a confirmed requirement and follows current architecture.
+- The critical path is implemented, integrated and tested as appropriate.
+- API, schema, environment and setup changes are documented.
+- Failure states and authorization are handled where relevant.
+- Real test commands and results are reported; unknown/untested items labeled honestly.
+- No secrets, private data, generated junk or unrelated churn.
+
+## PR description
+
+```text
+Requirement:
+Owner and base branch:
+Summary:
+Files changed:
+API or database contract changes:
+Tests run and observed results:
+Screenshots / demo path:
+Known limitations:
+Reviewers:
+```
+
+Ensure the final project works from one submitted branch even when history includes separate development branches.

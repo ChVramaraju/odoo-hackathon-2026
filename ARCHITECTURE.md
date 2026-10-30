@@ -1,55 +1,94 @@
-# Architecture Guide
+# System Architecture — Decision-Ready Blueprint
 
-## Status
-This is a proposed baseline. Final architecture must follow the official problem statement and organizer rules. No application runtime or business domain is assumed yet.
+**Status:** Proposed. No implemented system or official domain is assumed.
 
 ## Principles
-- Build one demonstrable end-to-end user journey before expanding scope.
-- Prefer a modular monolith over microservices for a four-person hackathon team.
-- Keep interfaces explicit so frontend, backend, and database work can proceed in parallel.
-- Keep privileged operations on a trusted server.
-- Use the simplest architecture that meets the actual requirements.
 
-## Proposed logical layers
-1. **Presentation** — React + TypeScript UI if a web frontend is appropriate; owns layout, forms, accessibility, and interaction states.
-2. **API/application layer** — FastAPI + Pydantic when custom server-side workflows are needed; validates requests and coordinates domain operations.
-3. **Domain logic** — explicit business rules independent of UI rendering and persistence where practical.
-4. **Data layer** — Supabase/PostgreSQL by default if allowed; schema, constraints, and migrations are versioned.
-5. **External adapters** — AI model APIs, payment sandbox, IoT/MQTT, Odoo APIs, or other services only when justified by the problem statement.
+Optimize for a reliable eight-hour MVP: one end-to-end journey, four parallel contributors, clear contracts, real relational persistence, reproducible local setup, server-side validation/authorization, and uncomplicated debugging. Prefer a modular monolith over microservices unless the official challenge requires otherwise.
 
-Supabase can serve straightforward data/auth/storage needs directly when RLS and policies are correctly configured. Do not duplicate the same business rules in frontend code, database triggers, and API handlers.
+## Decision tree
 
-## Typical request flow
-Browser UI -> authenticated API or policy-protected Supabase operation -> validation/business rules -> database or external adapter -> structured response -> UI state.
+1. **Odoo-native required?** Use the specified Odoo version and the standard module architecture (manifest, models, XML views, security, controllers as appropriate, ORM and PostgreSQL).
+2. **External application permitted?** Evaluate a React/TypeScript/Vite frontend, a FastAPI/Pydantic backend and locally runnable PostgreSQL or MySQL.
+3. **Odoo plus external integration required?** Adopt a hybrid only with explicit record ownership, authorization, failure/retry strategy and available integration time.
+4. **Requirements ambiguous?** Do not finalize a stack; verify against official organizer instructions.
 
-For privileged actions, secrets and authorization checks must remain server-side. Do not trust a client-supplied user ID or role.
+## Candidate A — Odoo-native
 
-## Proposed repository layout
-```text
-frontend/                 # web UI, if required
-backend/                  # FastAPI service, if required
-supabase/migrations/      # ordered SQL migrations, if Supabase is selected
-docs/                     # optional detailed product/design documents
-.github/workflows/        # automated repository checks
-README.md                 # canonical entry point
+```mermaid
+flowchart LR
+  UI[Browser / Odoo views] --> CTRL[Odoo controllers / model methods]
+  CTRL --> RULES[Odoo ORM + business rules]
+  RULES --> PG[(PostgreSQL)]
 ```
 
-Create only the application directories actually needed. If the event requires an Odoo module, use an Odoo-appropriate structure (manifest, models, views, security, data, tests) and document how it integrates with any separate UI/API.
+Enforce access rights and record rules. Do not bypass the ORM with unsafe database writes.
 
-## API conventions
-- Prefix custom HTTP endpoints with `/api/v1`.
-- Use JSON for ordinary request/response payloads unless a file or streaming protocol is required.
-- Validate input and return consistent error shapes.
-- Keep secrets and provider credentials on the server.
-- See API_CONTRACTS.md.
+## Candidate B — Standalone modular application
 
-## Cross-cutting concerns
-- Authentication and authorization must be explicit.
-- Database constraints protect integrity even when UI validation exists.
-- Log operational failures without logging secrets or sensitive payloads.
-- Add health/readiness endpoints only when a backend service exists.
-- Add tests for the core journey and critical business rules.
-- Document environment variables and deployment commands only after they are verified.
+```mermaid
+flowchart LR
+  UI[React / TypeScript UI] --> API[Versioned HTTP API]
+  API --> AUTH[Validation + authorization]
+  AUTH --> DOMAIN[Domain modules]
+  DOMAIN --> DATA[Data access + transactions]
+  DATA --> DB[(Local PostgreSQL / MySQL)]
+  DOMAIN -. if required .-> EXT[External service]
+```
 
-## Change control
-Record important architecture changes in DECISIONS.md, including context, choice, alternatives, and consequences. Coordinate contract/schema changes before merging parallel work.
+Browser code never contains service credentials. Keep domain logic separate from UI and storage. Use one primary relational database; avoid direct browser-to-database access unless an approved, fully protected managed backend explicitly warrants it.
+
+## Boundaries
+
+| Layer | Responsibilities |
+|---|---|
+| UI | Accessible interactions, client-side form feedback, loading and error states |
+| Controller/API | Input validation, user/role authorization, documented HTTP errors |
+| Domain | Business workflows, invariants and transaction intent |
+| Persistence | Constraints, transactions, migrations, indexed queries |
+| Adapters | External requests, timeouts, safe retries and failure mapping |
+
+## Proposed request sequence
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant F as UI
+  participant B as API / application
+  participant D as Database
+  U->>F: Submit form
+  F->>B: Request
+  B->>B: Validate, authorize, apply rules
+  alt Accepted
+    B->>D: Transaction
+    D-->>B: Result
+    B-->>F: Success response
+  else Invalid or forbidden
+    B-->>F: Structured error
+  end
+  F-->>U: Clear result or recovery guidance
+```
+
+These are conceptual flows, not evidence of implemented components.
+
+## Quality and delivery gates
+
+- Validate inputs and permissions at the trusted boundary; use parameterized queries/ORM.
+- Define foreign keys, uniqueness and transactional behavior for the actual domain.
+- Test the happy path, one negative path, a data-integrity rule and a clean startup.
+- Plan synthetic seeds/reset procedures; do not log credentials or sensitive records.
+- Choose deployment only after verifying compatible runtime and database access.
+- Record implementation commands, versions and outcomes only after running them.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| Incorrect assumption about Odoo requirements | Confirm official challenge before coding |
+| Database setup delays | Choose the smallest tested local option |
+| API/schema drift among team members | Freeze initial contracts, review changes together |
+| Different branch revisions | Coordinate safe merges; no resets or force pushes |
+| Demo dependency outages | Minimize external services; handle visible failures |
+| Submission fails due to branch/video | Consolidate and verify well before deadline |
+
+Record the final design and rationale in [DECISIONS.md](DECISIONS.md).
