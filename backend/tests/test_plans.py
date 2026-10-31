@@ -243,3 +243,37 @@ def test_supabase_plan_repository_row_to_plan_mapping() -> None:
     assert plan.end_of_term_behavior == EndOfTermBehavior.CLOSE
     assert plan.status == PlanStatus.DRAFT
     assert plan.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_invalid_billing_frequency_rejected(admin_client: AsyncClient) -> None:
+    res = await admin_client.post(
+        "/api/v1/plans",
+        json={
+            "name": "Invalid Freq Plan",
+            "price": "50.00",
+            "billing_frequency": "biweekly",
+        },
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invalid_end_of_term_behavior_rejected(admin_client: AsyncClient) -> None:
+    res = await admin_client.post(
+        "/api/v1/plans",
+        json={
+            "name": "Invalid EOT Plan",
+            "price": "50.00",
+            "billing_frequency": "monthly",
+            "end_of_term_behavior": "explode",
+        },
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_staff_can_list_plans(staff_client: AsyncClient) -> None:
+    res = await staff_client.get("/api/v1/plans")
+    assert res.status_code == 200
+    assert "items" in res.json()

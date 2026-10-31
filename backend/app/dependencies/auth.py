@@ -7,6 +7,8 @@ Integrates with Supabase Auth:
 - Extracts identity (user ID) and effective role (admin, staff, customer).
 - Enforces role-based permissions via require_role.
 - Returns agreed structured error responses on 401 Unauthorized or 403 Forbidden.
+- Security enforcement: Never decodes unverified JWT payloads without signature check.
+- Security enforcement: Only server-controlled app_metadata is trusted for roles; user_metadata is ignored.
 """
 
 from __future__ import annotations
@@ -68,10 +70,10 @@ async def get_current_user(
                 raise ValueError("Invalid user token")
             
             sb_user = response.user
-            # Extract role from user_metadata or app_metadata
-            user_meta = sb_user.user_metadata or {}
+            # Extract role ONLY from trusted, server-assigned app_metadata.
+            # user_metadata is user-editable and must NEVER be trusted for privileged roles.
             app_meta = sb_user.app_metadata or {}
-            role = app_meta.get("role") or user_meta.get("role") or "customer"
+            role = app_meta.get("role") or "customer"
 
             return User(
                 id=UUID(sb_user.id),
@@ -86,26 +88,12 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
             ) from exc
 
-    # In local/test mode without live Supabase credentials, decode payload safely
-    # If the token is a synthetic test token or JWT
-    try:
-        import base64
-        import json
-        payload_part = token.split(".")[1] if "." in token else None
-        if payload_part:
-            padded = payload_part + "=" * (-len(payload_part) % 4)
-            claims = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-            user_id = UUID(claims.get("sub", "00000000-0000-0000-0000-000000000001"))
-            email = claims.get("email", "user@example.com")
-            role = claims.get("role") or claims.get("user_metadata", {}).get("role", "customer")
-            return User(id=user_id, email=email, role=role)
-    except Exception:
-        pass
-
-    # If token cannot be validated
+    # Unverified JWT decoding must NEVER be accepted as proof of identity or role.
+    # Automated tests must use explicit FastAPI dependency overrides (app.dependency_overrides[get_current_user]).
+    # Missing credentials do not silently activate insecure authentication.
     raise AppError(
         code="UNAUTHORIZED",
-        message="Invalid authentication token.",
+        message="Invalid or unverified authentication credentials.",
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
 
@@ -126,4 +114,3 @@ def require_role(allowed_roles: list[str]) -> Callable[[User], User]:
         return current_user
 
     return role_checker
-

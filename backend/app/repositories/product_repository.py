@@ -145,7 +145,7 @@ class SupabaseProductRepository:
             "sales_price": str(data.sales_price),
             "cost_price": str(data.cost_price),
             "currency": data.currency,
-            "notes": data.notes,
+            "internal_notes": data.notes,
             "is_active": data.is_active,
         }
         res = self.client.table("products").insert(payload).execute()
@@ -181,6 +181,8 @@ class SupabaseProductRepository:
         for k, v in update_dict.items():
             if k == "type":
                 db_payload["product_type"] = v
+            elif k == "notes":
+                db_payload["internal_notes"] = v
             elif k in ("sales_price", "cost_price") and v is not None:
                 db_payload[k] = str(v)
             else:
@@ -228,7 +230,7 @@ class SupabaseProductRepository:
             sales_price=Decimal(str(row["sales_price"])),
             cost_price=Decimal(str(row.get("cost_price", "0.00"))),
             currency=row.get("currency", "USD"),
-            notes=row.get("notes"),
+            notes=row.get("internal_notes") or row.get("notes"),
             is_active=row.get("is_active", True),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
