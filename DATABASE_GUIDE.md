@@ -210,8 +210,38 @@ Individual itemized detail rows snapshotting catalog products/variants/plans wit
 
 *Catalog Deletion Protection & Automated Math Integrity:*
 - `ON DELETE RESTRICT` on `product_id`, `variant_id`, and `plan_id` prevents deleting catalog entries that have been quoted, protecting financial audit history.
-- `trg_quotation_lines_calculate BEFORE INSERT OR UPDATE`: Automatically synchronizes `line_type` and computes `subtotal`, `discount_amount`, `tax_amount`, and `line_total`.
-- `trg_quotation_lines_sync_totals AFTER INSERT OR UPDATE OR DELETE`: Automatically synchronizes aggregated subtotals, discounts, taxes, and total amounts to the parent `quotations` header.
+- `chk_quotation_line_item`: Enforces mutual exclusivity between product and plan line items (`(line_type = 'product' AND product_id IS NOT NULL AND plan_id IS NULL) OR (line_type = 'plan' AND plan_id IS NOT NULL AND product_id IS NULL AND variant_id IS NULL)`). Custom description-only lines are prohibited at the database level to align with the backend domain model (`QuotationService` enforces `has_prod ^ has_plan`, and `QuotationLineType` enum strictly defines `product` and `plan`).
+- `trg_quotation_lines_calculate BEFORE INSERT OR UPDATE`: Automatically synchronizes `line_type` based on referenced catalog entities (`plan` if `plan_id` is set, else `product`), and computes gross `subtotal = round(quantity * unit_price, 2)`, `discount_amount`, `tax_amount`, and net `line_total`. On updates modifying quantities, prices, or rates, line amounts are automatically recomputed.
+- `trg_quotation_lines_sync_totals AFTER INSERT OR UPDATE OR DELETE`: Automatically synchronizes aggregated subtotals, discounts, taxes, and total amounts to the parent `quotations` header. Handles line insertion, line deletion, and line reassignment across quotations (re-aggregating both `OLD.quotation_id` and `NEW.quotation_id` if reassigned).
+
+---
+
+### Atomic Quotation Creation RPC (`create_quotation_atomic`)
+To guarantee transaction atomicity across quotation header and detail lines without risk of orphaned records, the migration provides:
+```sql
+create_quotation_atomic(p_header JSONB, p_lines JSONB) RETURNS JSONB
+```
+- Executes inside a single ACID PostgreSQL transaction block.
+- Automatically rolls back the entire quotation if any child line item violates catalog constraints, checks, or foreign keys.
+- Granted `EXECUTE` to `authenticated` and `service_role`.
+
+---
+
+### Architectural Design Decisions & Baseline Invariants
+
+1. **Header-level `plan_id` Evaluation:**
+   - **Finding:** In Brightloop, subscription plans are itemized as individual lines (`quotation_lines.plan_id`), enabling mixed quotes (e.g. plan subscription + add-on service products). The backend schemas (`QuotationCreate`, `QuotationResponse`) do not expose a header-level `plan_id`.
+   - **Schema Status:** Kept as a nullable foreign key (`plan_id UUID REFERENCES plans(id) ON DELETE RESTRICT`) for optional forward compatibility (e.g. anchoring a quotation to a primary subscription plan), but operates safely as `NULL` for standard multi-item quotations.
+2. **Backend Service-Role vs RLS Security Boundary:**
+   - The FastAPI backend accesses Supabase using `SUPABASE_SERVICE_ROLE_KEY`. In Supabase PostgreSQL, `service_role` holds the `BYPASSRLS` attribute, so FastAPI backend endpoints enforce role-based access control (`require_role(...)`) and ownership checks server-side in Python.
+   - The PostgreSQL RLS policies provide **defense-in-depth**: direct client connections or scoped tokens using `authenticated` role are strictly locked down to customer ownership or staff/admin verification via `is_staff_or_admin()`.
+3. **Customer Draft Creation Permissions:**
+   - Authenticated customers are permitted to create draft quotations directly (`POST /api/v1/quotations`), matching `test_customer_create_quotation_with_product_snapshot`. Both the API service and the PostgreSQL RLS policy restrict customer insertions to `customer_id = auth.uid()` and `status = 'draft'`.
+4. **Earlier Migration Function Dependencies:**
+   - Confirmed all referenced PostgreSQL functions exist in canonical migration `20261031000001_catalog.sql`:
+     - `update_updated_at_column()` (line 13)
+     - `is_admin()` (line 26)
+     - `is_staff_or_admin()` (line 50)
 
 ---
 
@@ -228,7 +258,7 @@ Individual itemized detail rows snapshotting catalog products/variants/plans wit
 | `quotations` | "Allow admin to delete draft or cancelled quotations" | `DELETE` | `authenticated` | `is_admin() AND status IN ('draft', 'cancelled')` |
 | `quotation_lines` | "Allow callers to view lines of accessible quotations" | `SELECT` | `authenticated` | `EXISTS (SELECT 1 FROM quotations q WHERE q.id = quotation_lines.quotation_id)` |
 | `quotation_lines` | "Allow staff and admin to insert/update/delete lines" | `INSERT`, `UPDATE`, `DELETE` | `authenticated` | `is_staff_or_admin() AND parent status = 'draft'` |
-| `quotation_lines` | "Allow customers to insert/update/delete lines on own draft" | `INSERT`, `UPDATE`, `DELETE` | `authenticated` | Customer owns parent quotation AND parent `status = 'draft'` |
+| `quotation_lines` | "Allow customers to insert/update/delete lines on own draft" | `INSERT`, `UPDATE`, `DELETE` | `authenticated` | Customer owns parent quotation (`customer_id = auth.uid()`), creator is self/null, AND parent `status = 'draft'` |
 
 ---
 

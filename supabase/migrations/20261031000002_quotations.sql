@@ -1,5 +1,5 @@
 -- Migration: 20261031000002_quotations.sql
--- Description: Core quotations schema for Brightloop (quotations, quotation_lines)
+-- Description: Core quotations schema for Brightloop (quotations, quotation_lines, atomic RPC)
 -- Target: Supabase PostgreSQL (15+)
 -- Branch: feature/jashwanth-database
 
@@ -111,9 +111,8 @@ CREATE TABLE IF NOT EXISTS quotation_lines (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_quotation_line_item CHECK (
-        (product_id IS NOT NULL AND plan_id IS NULL) OR
-        (plan_id IS NOT NULL AND product_id IS NULL AND variant_id IS NULL) OR
-        (product_id IS NULL AND plan_id IS NULL AND trim(description) <> '')
+        (line_type = 'product' AND product_id IS NOT NULL AND plan_id IS NULL) OR
+        (line_type = 'plan' AND plan_id IS NOT NULL AND product_id IS NULL AND variant_id IS NULL)
     )
 );
 
@@ -141,9 +140,11 @@ BEGIN
     -- Calculate gross subtotal: quantity * unit_price
     NEW.subtotal = round(NEW.quantity * NEW.unit_price, 2);
     
-    -- Calculate discount if percentage provided and amount not manually specified
-    IF NEW.discount_percentage > 0 AND (NEW.discount_amount IS NULL OR NEW.discount_amount = 0) THEN
-        NEW.discount_amount = round(NEW.subtotal * (NEW.discount_percentage / 100.0), 2);
+    -- Calculate discount if percentage provided and amount not manually specified or if line values changed
+    IF NEW.discount_percentage > 0 THEN
+        IF NEW.discount_amount IS NULL OR NEW.discount_amount = 0 OR (TG_OP = 'UPDATE' AND (NEW.quantity <> OLD.quantity OR NEW.unit_price <> OLD.unit_price OR NEW.discount_percentage <> OLD.discount_percentage)) THEN
+            NEW.discount_amount = round(NEW.subtotal * (NEW.discount_percentage / 100.0), 2);
+        END IF;
     ELSIF NEW.discount_amount IS NULL THEN
         NEW.discount_amount = 0.00;
     END IF;
@@ -151,9 +152,11 @@ BEGIN
     -- Taxable base after discount
     v_taxable_base = greatest(0.00, NEW.subtotal - NEW.discount_amount);
     
-    -- Calculate tax if rate provided and tax amount not manually specified
-    IF NEW.tax_rate > 0 AND (NEW.tax_amount IS NULL OR NEW.tax_amount = 0) THEN
-        NEW.tax_amount = round(v_taxable_base * (NEW.tax_rate / 100.0), 2);
+    -- Calculate tax if rate provided and tax amount not manually specified or if taxable base changed
+    IF NEW.tax_rate > 0 THEN
+        IF NEW.tax_amount IS NULL OR NEW.tax_amount = 0 OR (TG_OP = 'UPDATE' AND (NEW.quantity <> OLD.quantity OR NEW.unit_price <> OLD.unit_price OR NEW.tax_rate <> OLD.tax_rate OR NEW.discount_amount <> OLD.discount_amount)) THEN
+            NEW.tax_amount = round(v_taxable_base * (NEW.tax_rate / 100.0), 2);
+        END IF;
     ELSIF NEW.tax_amount IS NULL THEN
         NEW.tax_amount = 0.00;
     END IF;
@@ -171,32 +174,69 @@ BEFORE INSERT OR UPDATE ON quotation_lines
 FOR EACH ROW EXECUTE FUNCTION calculate_quotation_line_amounts();
 
 -- Quotation parent header totals rollup trigger
+-- Correctly handles INSERT, UPDATE (including quotation_id reassignment), and DELETE
 CREATE OR REPLACE FUNCTION sync_quotation_totals()
 RETURNS TRIGGER
 SET search_path = public
 AS $$
-DECLARE
-    v_quotation_id UUID;
 BEGIN
-    v_quotation_id = COALESCE(NEW.quotation_id, OLD.quotation_id);
-    
-    UPDATE quotations
-    SET subtotal = COALESCE(lines.agg_subtotal, 0.00),
-        discount_total = COALESCE(lines.agg_discount, 0.00),
-        tax_total = COALESCE(lines.agg_tax, 0.00),
-        total_amount = COALESCE(lines.agg_total, 0.00),
-        updated_at = now()
-    FROM (
-        SELECT 
-            SUM(subtotal) AS agg_subtotal,
-            SUM(discount_amount) AS agg_discount,
-            SUM(tax_amount) AS agg_tax,
-            SUM(line_total) AS agg_total
-        FROM quotation_lines
-        WHERE quotation_id = v_quotation_id
-    ) lines
-    WHERE id = v_quotation_id;
-    
+    -- If quotation_id was reassigned in an UPDATE, re-sync the OLD quotation header first
+    IF (TG_OP = 'UPDATE' AND OLD.quotation_id IS DISTINCT FROM NEW.quotation_id) THEN
+        UPDATE quotations
+        SET subtotal = COALESCE(lines.agg_subtotal, 0.00),
+            discount_total = COALESCE(lines.agg_discount, 0.00),
+            tax_total = COALESCE(lines.agg_tax, 0.00),
+            total_amount = COALESCE(lines.agg_total, 0.00),
+            updated_at = now()
+        FROM (
+            SELECT 
+                SUM(subtotal) AS agg_subtotal,
+                SUM(discount_amount) AS agg_discount,
+                SUM(tax_amount) AS agg_tax,
+                SUM(line_total) AS agg_total
+            FROM quotation_lines
+            WHERE quotation_id = OLD.quotation_id
+        ) lines
+        WHERE id = OLD.quotation_id;
+    END IF;
+
+    -- Re-sync target quotation header (NEW for INSERT/UPDATE, OLD for DELETE)
+    IF (TG_OP = 'DELETE') THEN
+        UPDATE quotations
+        SET subtotal = COALESCE(lines.agg_subtotal, 0.00),
+            discount_total = COALESCE(lines.agg_discount, 0.00),
+            tax_total = COALESCE(lines.agg_tax, 0.00),
+            total_amount = COALESCE(lines.agg_total, 0.00),
+            updated_at = now()
+        FROM (
+            SELECT 
+                SUM(subtotal) AS agg_subtotal,
+                SUM(discount_amount) AS agg_discount,
+                SUM(tax_amount) AS agg_tax,
+                SUM(line_total) AS agg_total
+            FROM quotation_lines
+            WHERE quotation_id = OLD.quotation_id
+        ) lines
+        WHERE id = OLD.quotation_id;
+    ELSE
+        UPDATE quotations
+        SET subtotal = COALESCE(lines.agg_subtotal, 0.00),
+            discount_total = COALESCE(lines.agg_discount, 0.00),
+            tax_total = COALESCE(lines.agg_tax, 0.00),
+            total_amount = COALESCE(lines.agg_total, 0.00),
+            updated_at = now()
+        FROM (
+            SELECT 
+                SUM(subtotal) AS agg_subtotal,
+                SUM(discount_amount) AS agg_discount,
+                SUM(tax_amount) AS agg_tax,
+                SUM(line_total) AS agg_total
+            FROM quotation_lines
+            WHERE quotation_id = NEW.quotation_id
+        ) lines
+        WHERE id = NEW.quotation_id;
+    END IF;
+
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -214,7 +254,110 @@ CREATE INDEX IF NOT EXISTS idx_quotation_lines_variant_id ON quotation_lines (va
 CREATE INDEX IF NOT EXISTS idx_quotation_lines_plan_id ON quotation_lines (plan_id);
 
 -- ============================================================================
--- 4. Row Level Security (RLS) Policies
+-- 4. Atomic Quotation & Lines Creation RPC
+-- ============================================================================
+
+-- Function to atomically insert a quotation header and all child lines in a single transaction
+CREATE OR REPLACE FUNCTION create_quotation_atomic(
+    p_header JSONB,
+    p_lines JSONB
+)
+RETURNS JSONB
+SET search_path = public
+AS $$
+DECLARE
+    v_quotation_id UUID;
+    v_quotation_record RECORD;
+    v_line JSONB;
+BEGIN
+    v_quotation_id := COALESCE((p_header->>'id')::UUID, gen_random_uuid());
+
+    -- Insert header
+    INSERT INTO quotations (
+        id,
+        quotation_number,
+        customer_id,
+        plan_id,
+        status,
+        currency,
+        subtotal,
+        discount_total,
+        tax_total,
+        total_amount,
+        valid_until,
+        confirmed_at,
+        notes,
+        internal_notes,
+        created_by
+    ) VALUES (
+        v_quotation_id,
+        COALESCE(p_header->>'quotation_number', generate_quotation_number()),
+        (p_header->>'customer_id')::UUID,
+        (p_header->>'plan_id')::UUID,
+        COALESCE(p_header->>'status', 'draft'),
+        COALESCE(p_header->>'currency', 'INR'),
+        COALESCE((p_header->>'subtotal')::NUMERIC, 0.00),
+        COALESCE((p_header->>'discount_total')::NUMERIC, 0.00),
+        COALESCE((p_header->>'tax_total')::NUMERIC, 0.00),
+        COALESCE((p_header->>'total_amount')::NUMERIC, 0.00),
+        (p_header->>'valid_until')::DATE,
+        (p_header->>'confirmed_at')::TIMESTAMPTZ,
+        p_header->>'notes',
+        p_header->>'internal_notes',
+        (p_header->>'created_by')::UUID
+    );
+
+    -- Insert child line items
+    IF p_lines IS NOT NULL AND jsonb_array_length(p_lines) > 0 THEN
+        FOR v_line IN SELECT * FROM jsonb_array_elements(p_lines)
+        LOOP
+            INSERT INTO quotation_lines (
+                id,
+                quotation_id,
+                line_type,
+                product_id,
+                variant_id,
+                plan_id,
+                line_number,
+                description,
+                quantity,
+                unit_price,
+                discount_percentage,
+                discount_amount,
+                tax_rate,
+                tax_amount,
+                line_total
+            ) VALUES (
+                COALESCE((v_line->>'id')::UUID, gen_random_uuid()),
+                v_quotation_id,
+                COALESCE(v_line->>'line_type', CASE WHEN v_line->>'plan_id' IS NOT NULL THEN 'plan' ELSE 'product' END),
+                (v_line->>'product_id')::UUID,
+                (v_line->>'variant_id')::UUID,
+                (v_line->>'plan_id')::UUID,
+                COALESCE((v_line->>'line_number')::INTEGER, 1),
+                v_line->>'description',
+                COALESCE((v_line->>'quantity')::NUMERIC, 1.00),
+                COALESCE((v_line->>'unit_price')::NUMERIC, 0.00),
+                COALESCE((v_line->>'discount_percentage')::NUMERIC, 0.00),
+                COALESCE((v_line->>'discount_amount')::NUMERIC, 0.00),
+                COALESCE((v_line->>'tax_rate')::NUMERIC, 0.00),
+                COALESCE((v_line->>'tax_amount')::NUMERIC, 0.00),
+                COALESCE((v_line->>'line_total')::NUMERIC, 0.00)
+            );
+        END LOOP;
+    END IF;
+
+    -- Retrieve complete header record
+    SELECT * INTO v_quotation_record
+    FROM quotations
+    WHERE id = v_quotation_id;
+
+    RETURN to_jsonb(v_quotation_record);
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
+
+-- ============================================================================
+-- 5. Row Level Security (RLS) Policies
 -- ============================================================================
 
 ALTER TABLE quotations ENABLE ROW LEVEL SECURITY;
@@ -272,7 +415,7 @@ USING (customer_id = auth.uid())
 WITH CHECK (
     customer_id = auth.uid() AND (
         -- Editing self-created draft
-        (status = 'draft' AND created_by = auth.uid()) OR
+        (status = 'draft' AND (created_by IS NULL OR created_by = auth.uid())) OR
         -- Confirming a sent quote
         (status = 'confirmed') OR
         -- Cancelling an unconfirmed quote
@@ -323,7 +466,7 @@ WITH CHECK (
         SELECT 1 FROM quotations q 
         WHERE q.id = quotation_lines.quotation_id 
           AND q.customer_id = auth.uid() 
-          AND q.created_by = auth.uid() 
+          AND (q.created_by IS NULL OR q.created_by = auth.uid()) 
           AND q.status = 'draft'
     )
 );
@@ -358,7 +501,7 @@ USING (
         SELECT 1 FROM quotations q 
         WHERE q.id = quotation_lines.quotation_id 
           AND q.customer_id = auth.uid() 
-          AND q.created_by = auth.uid() 
+          AND (q.created_by IS NULL OR q.created_by = auth.uid()) 
           AND q.status = 'draft'
     )
 )
@@ -367,7 +510,7 @@ WITH CHECK (
         SELECT 1 FROM quotations q 
         WHERE q.id = quotation_lines.quotation_id 
           AND q.customer_id = auth.uid() 
-          AND q.created_by = auth.uid() 
+          AND (q.created_by IS NULL OR q.created_by = auth.uid()) 
           AND q.status = 'draft'
     )
 );
@@ -394,13 +537,13 @@ USING (
         SELECT 1 FROM quotations q 
         WHERE q.id = quotation_lines.quotation_id 
           AND q.customer_id = auth.uid() 
-          AND q.created_by = auth.uid() 
+          AND (q.created_by IS NULL OR q.created_by = auth.uid()) 
           AND q.status = 'draft'
     )
 );
 
 -- ============================================================================
--- 5. Role Grants
+-- 6. Role Grants & Permissions
 -- ============================================================================
 
 GRANT ALL ON quotations TO service_role;
@@ -409,3 +552,5 @@ GRANT USAGE, SELECT ON SEQUENCE quotation_number_seq TO authenticated, service_r
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON quotations TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON quotation_lines TO authenticated;
+
+GRANT EXECUTE ON FUNCTION create_quotation_atomic(JSONB, JSONB) TO authenticated, service_role;
