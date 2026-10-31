@@ -1,94 +1,80 @@
-# System Architecture — Decision-Ready Blueprint
+# System Architecture
 
-**Status:** Proposed. No implemented system or official domain is assumed.
+**Target architecture:** modular monolith with React frontend, FastAPI backend, and Supabase PostgreSQL. This is the team's shared target design, not a claim that these components are already implemented.
 
-## Principles
+## Stack
 
-Optimize for a reliable eight-hour MVP: one end-to-end journey, four parallel contributors, clear contracts, real relational persistence, reproducible local setup, server-side validation/authorization, and uncomplicated debugging. Prefer a modular monolith over microservices unless the official challenge requires otherwise.
+- React + TypeScript + Vite
+- Tailwind CSS + shadcn/ui
+- React Hook Form + Zod; TanStack Query
+- Python + FastAPI + Pydantic
+- Supabase Auth and Supabase PostgreSQL
+- SQL migrations under `supabase/migrations/`
+- Pytest and Vitest
 
-## Decision tree
-
-1. **Odoo-native required?** Use the specified Odoo version and the standard module architecture (manifest, models, XML views, security, controllers as appropriate, ORM and PostgreSQL).
-2. **External application permitted?** Evaluate a React/TypeScript/Vite frontend, a FastAPI/Pydantic backend and locally runnable PostgreSQL or MySQL.
-3. **Odoo plus external integration required?** Adopt a hybrid only with explicit record ownership, authorization, failure/retry strategy and available integration time.
-4. **Requirements ambiguous?** Do not finalize a stack; verify against official organizer instructions.
-
-## Candidate A — Odoo-native
-
-```mermaid
-flowchart LR
-  UI[Browser / Odoo views] --> CTRL[Odoo controllers / model methods]
-  CTRL --> RULES[Odoo ORM + business rules]
-  RULES --> PG[(PostgreSQL)]
-```
-
-Enforce access rights and record rules. Do not bypass the ORM with unsafe database writes.
-
-## Candidate B — Standalone modular application
+## Logical architecture
 
 ```mermaid
-flowchart LR
-  UI[React / TypeScript UI] --> API[Versioned HTTP API]
-  API --> AUTH[Validation + authorization]
-  AUTH --> DOMAIN[Domain modules]
-  DOMAIN --> DATA[Data access + transactions]
-  DATA --> DB[(Local PostgreSQL / MySQL)]
-  DOMAIN -. if required .-> EXT[External service]
+flowchart TD
+  U[Admin / Staff / Customer] --> FE[React + TypeScript UI]
+  FE -->|HTTPS REST JSON /api/v1| API[FastAPI]
+  API --> AUTH[Token verification + role and ownership checks]
+  AUTH --> SVC[Domain services]
+  SVC --> DB[(Supabase PostgreSQL)]
+  WORKER[Scheduled billing worker] --> SVC
+  CHAT[AI assistant service] --> TOOLS[Approved backend tools]
+  TOOLS --> SVC
 ```
 
-Browser code never contains service credentials. Keep domain logic separate from UI and storage. Use one primary relational database; avoid direct browser-to-database access unless an approved, fully protected managed backend explicitly warrants it.
+## Responsibilities
 
-## Boundaries
+| Component | Owns | Must not own |
+|---|---|---|
+| React frontend | Presentation, forms, navigation, loading/error states | Trusted authorization, financial totals, billing rules, secrets |
+| FastAPI routes | HTTP parsing, authentication verification, permission checks, response schemas | Duplicated UI-only business rules |
+| Domain services | Subscription lifecycle, prices, taxes, discounts, quotations, invoice/payment workflows | Direct coupling to a particular UI component |
+| Persistence/repositories | Database reads/writes, transactions and query boundaries | User-facing presentation |
+| Supabase PostgreSQL | Durable records, relationships, constraints, indexes, applicable RLS | Undocumented business behavior |
+| Billing worker | Find due subscriptions and invoke idempotent billing services | A second implementation of invoice calculation |
+| AI adapter | Translate requests into a limited set of approved tool calls and explain results | Arbitrary SQL, permission decisions, invented data |
 
-| Layer | Responsibilities |
-|---|---|
-| UI | Accessible interactions, client-side form feedback, loading and error states |
-| Controller/API | Input validation, user/role authorization, documented HTTP errors |
-| Domain | Business workflows, invariants and transaction intent |
-| Persistence | Constraints, transactions, migrations, indexed queries |
-| Adapters | External requests, timeouts, safe retries and failure mapping |
+## Request flow
 
-## Proposed request sequence
+1. Browser sends a typed request to FastAPI.
+2. FastAPI validates the request and verifies the Supabase Auth token.
+3. Backend checks the role and ownership against trusted data.
+4. Domain service calculates the result and performs an appropriate transaction.
+5. Backend returns a documented response or structured error.
+6. Frontend updates its state and displays a clear result.
 
-```mermaid
-sequenceDiagram
-  participant U as User
-  participant F as UI
-  participant B as API / application
-  participant D as Database
-  U->>F: Submit form
-  F->>B: Request
-  B->>B: Validate, authorize, apply rules
-  alt Accepted
-    B->>D: Transaction
-    D-->>B: Result
-    B-->>F: Success response
-  else Invalid or forbidden
-    B-->>F: Structured error
-  end
-  F-->>U: Clear result or recovery guidance
+## Billing safety
+
+- One shared calculation path for interactive and scheduled invoice creation.
+- Persist the subscription and billing period on each recurring invoice.
+- Enforce a database uniqueness constraint on the subscription/billing-period pair.
+- Use transaction-safe writes and idempotency for retries.
+- Keep invoice lifecycle separate from payment records.
+- Record actor and timestamps for important changes.
+- Do not call an invoice “paid” merely because a payment form was submitted; reconcile recorded payments with the invoice balance.
+
+## AI boundary
+
+```text
+Chat UI -> FastAPI assistant endpoint -> intent/parameter extraction
+       -> approved domain tool -> authorization + validated database query
+       -> grounded result -> assistant explanation
 ```
 
-These are conceptual flows, not evidence of implemented components.
+Start with configured-plan recommendations and a small number of read-only business queries. The assistant must not invent catalog items, pricing, customer records, or permissions. Mutating actions require backend permission checks and explicit confirmation.
 
-## Quality and delivery gates
+## Performance and reliability
 
-- Validate inputs and permissions at the trusted boundary; use parameterized queries/ORM.
-- Define foreign keys, uniqueness and transactional behavior for the actual domain.
-- Test the happy path, one negative path, a data-integrity rule and a clean startup.
-- Plan synthetic seeds/reset procedures; do not log credentials or sensitive records.
-- Choose deployment only after verifying compatible runtime and database access.
-- Record implementation commands, versions and outcomes only after running them.
+- Index actual filters and join paths; use pagination.
+- Avoid N+1 queries and load only required columns.
+- Keep API work synchronous and simple where possible; use a scheduled worker for recurring billing.
+- Target under two seconds for normal pages with thousands of records, then measure with realistic seeded data rather than claiming performance without a test.
+- Keep external services optional for the core demo and show recoverable errors.
 
-## Risks
+## Mandatory decision gate
 
-| Risk | Mitigation |
-|---|---|
-| Incorrect assumption about Odoo requirements | Confirm official challenge before coding |
-| Database setup delays | Choose the smallest tested local option |
-| API/schema drift among team members | Freeze initial contracts, review changes together |
-| Different branch revisions | Coordinate safe merges; no resets or force pushes |
-| Demo dependency outages | Minimize external services; handle visible failures |
-| Submission fails due to branch/video | Consolidate and verify well before deadline |
-
-Record the final design and rationale in [DECISIONS.md](DECISIONS.md).
+Verify the official hackathon rules before relying on a standalone architecture. If a native Odoo module is mandatory, update this design and the decision register before implementation. Do not add Odoo and FastAPI as competing business backends without a documented integration need.
