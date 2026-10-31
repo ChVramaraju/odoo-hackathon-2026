@@ -58,7 +58,7 @@ async def get_current_user(
     token = parts[1]
     settings = get_settings()
 
-    # If Supabase is configured, verify token via Supabase client
+    # If Supabase is configured, verify token via Supabase Auth
     if settings.supabase_url and settings.supabase_anon_key:
         try:
             from supabase import create_client
@@ -68,10 +68,11 @@ async def get_current_user(
                 raise ValueError("Invalid user token")
             
             sb_user = response.user
-            # Extract role from user_metadata or app_metadata
-            user_meta = sb_user.user_metadata or {}
+            # Security Rule: Privileged roles (admin, staff) MUST come from server-managed app_metadata.
+            # user_metadata is user-editable and must never grant admin or staff permissions.
             app_meta = sb_user.app_metadata or {}
-            role = app_meta.get("role") or user_meta.get("role") or "customer"
+            raw_role = app_meta.get("role")
+            role = raw_role if raw_role in ("admin", "staff") else "customer"
 
             return User(
                 id=UUID(sb_user.id),
@@ -86,26 +87,12 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
             ) from exc
 
-    # In local/test mode without live Supabase credentials, decode payload safely
-    # If the token is a synthetic test token or JWT
-    try:
-        import base64
-        import json
-        payload_part = token.split(".")[1] if "." in token else None
-        if payload_part:
-            padded = payload_part + "=" * (-len(payload_part) % 4)
-            claims = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-            user_id = UUID(claims.get("sub", "00000000-0000-0000-0000-000000000001"))
-            email = claims.get("email", "user@example.com")
-            role = claims.get("role") or claims.get("user_metadata", {}).get("role", "customer")
-            return User(id=user_id, email=email, role=role)
-    except Exception:
-        pass
-
-    # If token cannot be validated
+    # Security Rule: A JWT payload decoded without signature verification must NEVER be accepted as proof of identity or role.
+    # Insecure base64 fallback decoding is completely rejected.
+    # Automated unit tests must use explicit FastAPI dependency overrides: app.dependency_overrides[get_current_user] = ...
     raise AppError(
         code="UNAUTHORIZED",
-        message="Invalid authentication token.",
+        message="Authentication token verification failed. Insecure unverified JWT decoding is rejected.",
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
 

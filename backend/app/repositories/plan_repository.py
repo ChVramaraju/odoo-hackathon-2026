@@ -47,6 +47,7 @@ class InMemoryPlanRepository:
         plan = PlanResponse(
             id=uuid4(),
             name=data.name,
+            code=data.code,
             description=data.description,
             price=data.price,
             currency=data.currency,
@@ -120,6 +121,7 @@ class SupabasePlanRepository:
 
         payload = {
             "name": data.name,
+            "code": data.code,
             "description": data.description,
             "price": str(data.price),
             "currency": data.currency,
@@ -224,6 +226,7 @@ class SupabasePlanRepository:
         return PlanResponse(
             id=UUID(row["id"]),
             name=row["name"],
+            code=row.get("code"),
             description=row.get("description"),
             price=Decimal(str(row["price"])),
             currency=row.get("currency", "USD"),

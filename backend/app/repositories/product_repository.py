@@ -56,6 +56,7 @@ class InMemoryProductRepository:
             sales_price=data.sales_price,
             cost_price=data.cost_price,
             currency=data.currency,
+            description=data.description,
             notes=data.notes,
             is_active=data.is_active,
             created_at=now,
@@ -145,7 +146,8 @@ class SupabaseProductRepository:
             "sales_price": str(data.sales_price),
             "cost_price": str(data.cost_price),
             "currency": data.currency,
-            "notes": data.notes,
+            "description": data.description,
+            "internal_notes": data.notes,
             "is_active": data.is_active,
         }
         res = self.client.table("products").insert(payload).execute()
@@ -183,6 +185,8 @@ class SupabaseProductRepository:
                 db_payload["product_type"] = v
             elif k in ("sales_price", "cost_price") and v is not None:
                 db_payload[k] = str(v)
+            elif k == "notes":
+                db_payload["internal_notes"] = v
             else:
                 db_payload[k] = v
 
@@ -228,7 +232,8 @@ class SupabaseProductRepository:
             sales_price=Decimal(str(row["sales_price"])),
             cost_price=Decimal(str(row.get("cost_price", "0.00"))),
             currency=row.get("currency", "USD"),
-            notes=row.get("notes"),
+            description=row.get("description"),
+            notes=row.get("internal_notes") or row.get("notes"),
             is_active=row.get("is_active", True),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
