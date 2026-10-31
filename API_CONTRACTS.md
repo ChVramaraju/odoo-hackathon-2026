@@ -1,58 +1,85 @@
-# API and Integration Contracts
+# API Contracts — Brightloop
 
-**Status:** The audited `main` documentation snapshot does not define implemented domain endpoints. No application source/API call sites were found in the reviewed documentation scaffold. This does not prove that a remote Supabase project has no tables or that other branches have no code. Inventory all current code before claiming coverage.
+**Base prefix:** `/api/v1`  
+**Format:** JSON over HTTPS  
+**Status:** Proposed shared contract. An endpoint is not implemented merely because it appears here. FastAPI OpenAPI output and automated tests become the executable evidence.
 
-## First determine the access path
-Record which of these is actually implemented:
-1. **Browser -> Supabase directly:** document each Supabase Auth call, table/view query, insert/update/delete, RPC, storage operation and realtime subscription. These are network/data API calls even when they are not custom REST endpoints. RLS and grants must be verified.
-2. **Browser -> custom backend -> Supabase:** document every HTTP endpoint and the backend's database calls. Keep service-role credentials server-side and avoid duplicated auth/business rules.
-3. **Odoo-native:** document controllers/model methods, access groups, record rules and ORM effects as appropriate.
+## Conventions
 
-Do not assume a separate FastAPI/custom backend exists. Do not invent endpoints before the confirmed challenge and source code support them.
+- Authentication: `Authorization: Bearer <Supabase access token>` for protected routes. FastAPI verifies the token before handling the request.
+- IDs: UUID strings.
+- Timestamps: ISO 8601 with timezone.
+- Money: decimal strings in JSON for exact representation; backend uses Python `Decimal` and PostgreSQL `NUMERIC`. Include currency explicitly where needed.
+- Lists: `items`, `page`, `page_size`, and `total` unless a documented endpoint-specific shape is needed.
+- Validate request bodies, path params, filters, and state transitions.
+- The backend computes totals, taxes, discounts, invoice status, and balances. Ignore client-supplied derived totals.
+- Return consistent errors without stack traces or database internals.
 
-## Custom HTTP API conventions (proposal only)
-- Use a stable base path such as `/api/v1` only if a custom REST API is actually selected.
-- Document JSON request/response schemas and timezone-aware ISO 8601 timestamps where relevant.
-- Choose status codes consistently (e.g. 200/201, 400, 401, 403, 404, 409, 422 and 500 where appropriate).
-- Validate body, path and query values. Enforce authentication and authorization at a trusted boundary.
-- Return actionable errors without stack traces, SQL details or secrets.
-
-Example error contract (proposal only):
+Example error:
 ```json
-{"error":{"code":"VALIDATION_ERROR","message":"Please correct the highlighted fields.","details":[]}}
+{
+  "error": {
+    "code": "PERMISSION_DENIED",
+    "message": "You do not have permission to perform this action.",
+    "details": []
+  }
+}
 ```
 
-## Endpoint / operation template
-```text
-Requirement ID:
-Owner:
-Type: HTTP endpoint / Supabase query / Auth / RPC / Storage / Realtime / Odoo model
-Method and path or table/function:
-Source file and line:
-Purpose:
-Authentication / allowed roles:
-Request fields, filters and constraints:
-Success status / result shape:
-Failure status / error codes:
-Entities read or changed:
-RLS/grants or server authorization:
-Transaction / idempotency needs:
-Test command and observed evidence:
-```
+## Endpoint inventory
 
-## Integration policy
-The lead and frontend owner confirm the UI/API contract; the database owner confirms schema effects and RLS. Breaking schema or API changes need review and updated examples/tests before merge. Use synthetic examples only. Do not claim an endpoint or operation exists until found in code and verified.
-
-## Odoo-native adaptation
-Use supported Odoo controller methods, models and ORM APIs where appropriate. Document groups, record rules, model methods and inter-module contracts. Do not impose `/api/v1` on an Odoo-native implementation without a real requirement.
-
-## Current contract inventory
-| Interface | Status in audited main documentation snapshot | Next action |
+| Area | Method and path | Purpose / access |
 |---|---|---|
-| Custom HTTP endpoints | None documented or implemented in the reviewed scaffold | Search all branches/source after code is added |
-| Supabase client calls | Not evidenced in reviewed source because no application source was present in the audited snapshot | Inspect actual frontend/server source and list each call |
-| Supabase Auth | Not verified | Inspect client setup and auth call sites |
-| Supabase RPC / Storage / Realtime | Not verified | Search source and document if present |
-| Odoo controllers/models | No implementation verified | Only document if required and present |
+| Current user | GET `/auth/me` | Authenticated caller profile and effective role |
+| Products | GET, POST `/products` | List; admin creates |
+| Product detail | GET, PATCH `/products/{id}` | Read; authorized admin updates |
+| Plans | GET, POST `/plans` | List available plans; admin configures |
+| Plan detail | GET, PATCH `/plans/{id}` | Read; admin updates |
+| Quotations | GET, POST `/quotations` | Role-scoped list and create |
+| Confirm quotation | POST `/quotations/{id}/confirm` | Validate and confirm eligible quotation |
+| Subscriptions | GET, POST `/subscriptions` | Role-scoped list and authorized creation |
+| Subscription detail | GET, PATCH `/subscriptions/{id}` | Read/update permitted fields |
+| Pause/resume/renew/close | POST `/subscriptions/{id}/pause`, `/resume`, `/renew`, `/close` | Validated lifecycle transitions |
+| Invoices | GET, POST `/invoices` | Role-scoped list; controlled creation |
+| Invoice detail | GET `/invoices/{id}` | Read with ownership checks |
+| Confirm/cancel invoice | POST `/invoices/{id}/confirm`, `/cancel` | Validated invoice transitions |
+| Payments | GET, POST `/payments` | List and record payment |
+| Discounts | GET, POST `/discounts`; PATCH `/discounts/{id}` | Admin-managed discount rules |
+| Dashboard | GET `/dashboard/summary` | Role-appropriate KPIs |
+| Subscription health | GET `/analytics/subscription-health` | Expiry, renewal, overdue and billing attention |
+| Revenue forecast | GET `/analytics/revenue-forecast` | Estimated scheduled subscription revenue; label as estimate |
+| Audit logs | GET `/audit-logs` | Permission-filtered change history |
+| AI assistant | POST `/assistant/chat` | Approved read-only assistant tools initially |
 
-See [API_CALL_INVENTORY.md](API_CALL_INVENTORY.md) for the call-by-call checklist.
+For action endpoints, use request bodies only when the action requires parameters. Document exact Pydantic request/response models and status codes in code before frontend integration.
+
+## Authorization matrix (baseline)
+
+| Capability | Customer | Staff | Admin |
+|---|---|---|---|
+| Read own subscription/invoice/payment | Yes | As operationally permitted | Yes |
+| Read other customers' records | No | Only if role permits the task | Yes |
+| Create/manage products, plans, taxes, discounts | No | Limited to explicit permission | Yes |
+| Add staff | No | No | Yes |
+| Record operational payment | No | If permitted | Yes |
+| View finance-wide reports | No | If permitted | Yes |
+| Use AI assistant | Own-data tools only | Tools allowed for staff role | Tools allowed for admin role |
+
+Every route must enforce these rules server-side. The AI model cannot grant permissions.
+
+## Billing and consistency rules
+
+- Recurring invoice creation is idempotent per subscription and billing period.
+- Use a unique database constraint, not only a frontend check.
+- Use safe transaction boundaries for invoice and payment writes.
+- Return `409 Conflict` for conflicting state changes or duplicate operations where appropriate.
+- Payment recording must reference an invoice, record method/amount/date/note, and update the invoice balance consistently.
+- Never trust client-provided role, unit price, tax amount, discount, total, or paid status.
+
+## Contract change checklist
+
+1. Discuss change with frontend and database owners.
+2. Update this document and Pydantic/TypeScript types.
+3. Update migration or database function if required.
+4. Add/update tests and examples.
+5. Communicate breaking changes before merging.
