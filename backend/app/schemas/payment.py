@@ -26,6 +26,8 @@ PositiveDecimal = Annotated[Decimal, Field(ge=Decimal("0.01"), decimal_places=2)
 
 class PaymentMethod(str, Enum):
     CARD = "card"
+    CREDIT_CARD = "credit_card"
+    DEBIT_CARD = "debit_card"
     BANK_TRANSFER = "bank_transfer"
     UPI = "upi"
     NET_BANKING = "net_banking"

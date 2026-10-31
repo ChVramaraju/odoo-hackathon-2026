@@ -4,11 +4,15 @@
 **Schema source of truth:** versioned SQL migrations under `supabase/migrations/`.  
 **Status:** Core catalog schema is codified in `supabase/migrations/20261031000001_catalog.sql` on branch `feature/jashwanth-database`. Inspect the actual Supabase project before applying migrations. Never assume remote state from documentation alone.
 
-## Applied migrations
+## Applied & Proposed Migrations
 
 | Version | Migration file | Tables & objects | Status |
 |---|---|---|---|
-| `20261031000001` | `20261031000001_catalog.sql` | `products`, `product_variants`, `plans`, `plan_products`, triggers, RLS policies, helper functions (`is_admin`, `is_staff_or_admin`, `update_updated_at_column`) | Verified locally; ready for dev database apply |
+| `20261031000001` | `20261031000001_catalog.sql` | `products`, `product_variants`, `plans`, `plan_products`, triggers, RLS policies, helper functions (`is_admin`, `is_staff_or_admin`, `update_updated_at_column`) | Applied to `brightloop-dev` |
+| `20261031000002` | `20261031000002_quotations.sql` | `quotations`, `quotation_lines`, sequences, triggers, `create_quotation_atomic` RPC, RLS policies | Applied to `brightloop-dev` |
+| `20261031000003` | `20261031000003_subscriptions.sql` | `subscriptions`, `subscription_lines`, sequences, triggers, RLS policies | Committed on `feature/jashwanth-database` (ready for dev apply) |
+| `20261031000004` | `20261031000004_invoices.sql` | `invoices`, `invoice_lines`, sequences, triggers, line sync trigger, RLS policies | Committed on `feature/jashwanth-database` (ready for dev apply) |
+| `20261031000005` | `20261031000005_payments.sql` | `payments`, sequences, `trg_payments_apply_to_invoice`, `record_payment_atomic` RPC, RLS policies | Committed on `feature/jashwanth-database` (ready for dev apply) |
 
 ---
 

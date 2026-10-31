@@ -120,13 +120,18 @@ class PaymentService:
             )
 
         # 6. Atomic invoice balance credit update
-        updated_inv = await self.invoice_repo.record_payment_credit(data.invoice_id, amount)
-        if not updated_inv:
-            raise AppError(
-                code="INTERNAL_ERROR",
-                message="Failed to apply credit to invoice balance.",
-                status_code=500,
-            )
+        # If the repository manages atomic settlement directly (e.g. Supabase via RPC
+        # or PostgreSQL trigger trg_payments_apply_to_invoice), avoid an uncoordinated
+        # separate read-then-update call from the application layer.
+        # Otherwise (e.g. InMemoryPaymentRepository), update the mock invoice balance.
+        if not getattr(self.repo, "is_atomic_settlement_managed", False):
+            updated_inv = await self.invoice_repo.record_payment_credit(data.invoice_id, amount)
+            if not updated_inv:
+                raise AppError(
+                    code="INTERNAL_ERROR",
+                    message="Failed to apply credit to invoice balance.",
+                    status_code=500,
+                )
 
         # 7. Record payment
         now = datetime.now(timezone.utc)

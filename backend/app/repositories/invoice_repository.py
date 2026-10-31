@@ -10,6 +10,7 @@ Defines:
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional, Protocol
@@ -451,6 +452,13 @@ class SupabaseInvoiceRepository:
 def get_invoice_repository() -> InvoiceRepositoryProtocol:
     """Dependency injection provider for InvoiceRepository."""
     settings = get_settings()
+
+    # Fail fast if production is configured but credentials are missing
+    if os.getenv("APP_ENV") == "production" or os.getenv("REQUIRE_PERSISTENT_STORAGE") == "true":
+        if not (settings.supabase_url and (settings.supabase_service_role_key or settings.supabase_anon_key)):
+            raise RuntimeError(
+                "Production environment requires Supabase credentials, refusing silent fallback to InMemoryInvoiceRepository."
+            )
 
     if settings.supabase_url and (settings.supabase_service_role_key or settings.supabase_anon_key):
         from supabase import create_client

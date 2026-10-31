@@ -24,7 +24,7 @@ from httpx import AsyncClient
 from app.dependencies.auth import User
 from app.repositories.invoice_repository import InMemoryInvoiceRepository
 from app.schemas.invoice import InvoiceResponse, InvoiceStatus
-from app.schemas.payment import PaymentMethod, PaymentStatus
+from app.schemas.payment import PaymentMethod, PaymentResponse, PaymentStatus
 
 
 @pytest.fixture
@@ -314,4 +314,253 @@ async def test_currency_mismatch_rejected(
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "CURRENCY_MISMATCH"
+
+
+# =============================================================================
+# SupabasePaymentRepository RPC & Safety Unit Tests
+# =============================================================================
+
+from app.core.errors import AppError
+from app.repositories.payment_repository import (
+    SupabasePaymentRepository,
+    get_payment_repository,
+)
+
+
+class MockRpcQuery:
+    def __init__(self, data=None, error=None):
+        self._data = data
+        self._error = error
+
+    def execute(self):
+        if self._error:
+            raise self._error
+        class Res:
+            pass
+        r = Res()
+        r.data = self._data
+        return r
+
+
+class MockTableQuery:
+    def __init__(self, data=None, error=None):
+        self._data = data
+        self._error = error
+
+    def insert(self, payload):
+        return self
+
+    def select(self, *args, **kwargs):
+        return self
+
+    def eq(self, *args, **kwargs):
+        return self
+
+    def limit(self, *args, **kwargs):
+        return self
+
+    def order(self, *args, **kwargs):
+        return self
+
+    def range(self, *args, **kwargs):
+        return self
+
+    def delete(self):
+        return self
+
+    def execute(self):
+        if self._error:
+            raise self._error
+        class Res:
+            pass
+        r = Res()
+        r.data = self._data
+        r.count = len(self._data) if isinstance(self._data, list) else 1
+        return r
+
+
+class MockSupabaseClient:
+    def __init__(self, rpc_data=None, rpc_error=None, table_data=None, table_error=None):
+        self.rpc_data = rpc_data
+        self.rpc_error = rpc_error
+        self.table_data = table_data
+        self.table_error = table_error
+        self.last_rpc = None
+        self.last_rpc_params = None
+
+    def rpc(self, func_name, params):
+        self.last_rpc = func_name
+        self.last_rpc_params = params
+        return MockRpcQuery(data=self.rpc_data, error=self.rpc_error)
+
+    def table(self, table_name):
+        return MockTableQuery(data=self.table_data, error=self.table_error)
+
+
+@pytest.mark.asyncio
+async def test_supabase_payment_repository_rpc_success():
+    pay_id = uuid4()
+    inv_id = uuid4()
+    cust_id = uuid4()
+
+    mock_db_row = {
+        "id": str(pay_id),
+        "payment_number": "PAY-202610-00100",
+        "invoice_id": str(inv_id),
+        "customer_id": str(cust_id),
+        "amount": "2500.00",
+        "currency": "INR",
+        "payment_method": "upi",
+        "payment_status": "completed",
+        "payment_date": "2026-10-31T12:00:00Z",
+        "transaction_reference": "TXN-12345",
+        "idempotency_key": "IDEMP-999",
+        "notes": "Settlement payment",
+        "recorded_by": str(cust_id),
+        "created_at": "2026-10-31T12:00:00Z",
+        "updated_at": "2026-10-31T12:00:00Z",
+    }
+
+    client = MockSupabaseClient(rpc_data=mock_db_row)
+    repo = SupabasePaymentRepository(client)
+
+    payment_in = PaymentResponse(
+        id=pay_id,
+        payment_number="PAY-202610-00100",
+        invoice_id=inv_id,
+        customer_id=cust_id,
+        amount=Decimal("2500.00"),
+        currency="INR",
+        payment_method=PaymentMethod.UPI,
+        payment_status=PaymentStatus.COMPLETED,
+        payment_date=datetime.now(timezone.utc),
+        transaction_reference="TXN-12345",
+        idempotency_key="IDEMP-999",
+        notes="Settlement payment",
+        recorded_by=cust_id,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    result = await repo.create(payment_in)
+    assert client.last_rpc == "record_payment_atomic"
+    assert client.last_rpc_params["p_payment"]["amount"] == "2500.00"
+    assert client.last_rpc_params["p_payment"]["idempotency_key"] == "IDEMP-999"
+
+    assert result.id == pay_id
+    assert result.amount == Decimal("2500.00")
+    assert result.payment_status == PaymentStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_supabase_payment_repository_rpc_overpayment_rejected():
+    client = MockSupabaseClient(
+        rpc_error=Exception("Payment amount (5000.00) exceeds outstanding invoice balance (2000.00)")
+    )
+    repo = SupabasePaymentRepository(client)
+
+    payment_in = PaymentResponse(
+        id=uuid4(),
+        payment_number="PAY-202610-00101",
+        invoice_id=uuid4(),
+        customer_id=uuid4(),
+        amount=Decimal("5000.00"),
+        currency="INR",
+        payment_method=PaymentMethod.MANUAL,
+        payment_status=PaymentStatus.COMPLETED,
+        payment_date=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        await repo.create(payment_in)
+    assert exc_info.value.code == "OVERPAYMENT_NOT_ALLOWED"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_supabase_payment_repository_rpc_conflict_rejected():
+    client = MockSupabaseClient(
+        rpc_error=Exception("Idempotency key has already been used with different payment parameters")
+    )
+    repo = SupabasePaymentRepository(client)
+
+    payment_in = PaymentResponse(
+        id=uuid4(),
+        payment_number="PAY-202610-00102",
+        invoice_id=uuid4(),
+        customer_id=uuid4(),
+        amount=Decimal("1000.00"),
+        currency="INR",
+        payment_method=PaymentMethod.MANUAL,
+        payment_status=PaymentStatus.COMPLETED,
+        payment_date=datetime.now(timezone.utc),
+        idempotency_key="CLASH-KEY",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        await repo.create(payment_in)
+    assert exc_info.value.code == "CONFLICT"
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_supabase_payment_repository_rpc_fallback_on_pgrst202():
+    pay_id = uuid4()
+    mock_db_row = {
+        "id": str(pay_id),
+        "payment_number": "PAY-202610-00103",
+        "invoice_id": str(uuid4()),
+        "customer_id": str(uuid4()),
+        "amount": "1200.00",
+        "currency": "INR",
+        "payment_method": "cash",
+        "status": "completed",
+        "payment_date": "2026-10-31T12:00:00Z",
+        "created_at": "2026-10-31T12:00:00Z",
+        "updated_at": "2026-10-31T12:00:00Z",
+    }
+
+    client = MockSupabaseClient(
+        rpc_error=Exception("PGRST202: Could not find the function record_payment_atomic in schema"),
+        table_data=[mock_db_row],
+    )
+    repo = SupabasePaymentRepository(client)
+
+    payment_in = PaymentResponse(
+        id=pay_id,
+        payment_number="PAY-202610-00103",
+        invoice_id=UUID(mock_db_row["invoice_id"]),
+        customer_id=UUID(mock_db_row["customer_id"]),
+        amount=Decimal("1200.00"),
+        currency="INR",
+        payment_method=PaymentMethod.CASH,
+        payment_status=PaymentStatus.COMPLETED,
+        payment_date=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    res = await repo.create(payment_in)
+    assert res.id == pay_id
+    assert res.amount == Decimal("1200.00")
+
+
+def test_payment_repository_fail_fast_in_production(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("SUPABASE_URL", "")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "")
+
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        get_payment_repository()
+    assert "Production environment requires Supabase credentials" in str(exc_info.value)
+    get_settings.cache_clear()
+
 

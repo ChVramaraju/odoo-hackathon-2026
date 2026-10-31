@@ -10,12 +10,14 @@ Defines:
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional, Protocol
 from uuid import UUID
 
 from app.core.config import get_settings
+from app.core.errors import AppError
 from app.schemas.payment import PaymentMethod, PaymentResponse, PaymentStatus
 
 
@@ -93,6 +95,8 @@ class InMemoryPaymentRepository:
 class SupabasePaymentRepository:
     """PostgreSQL storage via Supabase Client."""
 
+    is_atomic_settlement_managed: bool = True
+
     def __init__(self, client) -> None:
         self.client = client
 
@@ -104,6 +108,17 @@ class SupabasePaymentRepository:
         raw_updated = row.get("updated_at")
         updated_at = datetime.fromisoformat(raw_updated) if isinstance(raw_updated, str) else (raw_updated or datetime.now(timezone.utc))
 
+        status_str = row.get("payment_status") or row.get("status", "completed")
+        recorded_by = UUID(str(row["recorded_by"])) if row.get("recorded_by") else (
+            UUID(str(row["created_by"])) if row.get("created_by") else None
+        )
+
+        raw_method = row.get("payment_method", "manual")
+        try:
+            payment_method = PaymentMethod(raw_method)
+        except ValueError:
+            payment_method = PaymentMethod.MANUAL
+
         return PaymentResponse(
             id=UUID(str(row["id"])),
             payment_number=str(row["payment_number"]),
@@ -111,18 +126,24 @@ class SupabasePaymentRepository:
             customer_id=UUID(str(row["customer_id"])),
             amount=Decimal(str(row["amount"])).quantize(Decimal("0.01")),
             currency=str(row.get("currency", "INR")),
-            payment_method=PaymentMethod(row.get("payment_method", "manual")),
-            payment_status=PaymentStatus(row.get("payment_status", "completed")),
+            payment_method=payment_method,
+            payment_status=PaymentStatus(status_str),
             payment_date=payment_date,
             transaction_reference=row.get("transaction_reference"),
             idempotency_key=row.get("idempotency_key"),
             notes=row.get("notes"),
-            recorded_by=UUID(str(row["recorded_by"])) if row.get("recorded_by") else None,
+            recorded_by=recorded_by,
             created_at=created_at,
             updated_at=updated_at,
         )
 
     async def create(self, payment: PaymentResponse) -> PaymentResponse:
+        method_str = payment.payment_method.value
+        # Map sub-types if needed by database check constraint:
+        # CHECK (payment_method IN ('card', 'bank_transfer', 'upi', 'net_banking', 'manual', 'cash'))
+        if method_str in ("credit_card", "debit_card"):
+            method_str = "card"
+
         payload = {
             "id": str(payment.id),
             "payment_number": payment.payment_number,
@@ -130,7 +151,7 @@ class SupabasePaymentRepository:
             "customer_id": str(payment.customer_id),
             "amount": str(payment.amount),
             "currency": payment.currency,
-            "payment_method": payment.payment_method.value,
+            "payment_method": method_str,
             "payment_status": payment.payment_status.value,
             "payment_date": payment.payment_date.isoformat(),
             "transaction_reference": payment.transaction_reference,
@@ -138,8 +159,79 @@ class SupabasePaymentRepository:
             "notes": payment.notes,
             "recorded_by": str(payment.recorded_by) if payment.recorded_by else None,
         }
-        self.client.table("payments").insert(payload).execute()
-        return payment
+
+        try:
+            # 1. Attempt PostgreSQL atomic RPC: record_payment_atomic(p_payment JSONB)
+            # This executes in a single PostgreSQL ACID transaction:
+            # locks the parent invoice FOR UPDATE, validates non-overpayment,
+            # enforces idempotency, inserts the payment record, and automatically triggers
+            # invoice balance and status reconciliation via trg_payments_apply_to_invoice.
+            res = self.client.rpc("record_payment_atomic", {"p_payment": payload}).execute()
+            if res.data:
+                return self._row_to_payment(res.data)
+            return payment
+        except Exception as exc:
+            err_msg = str(exc)
+            # Map PostgreSQL constraint & business rule violations to AppError
+            if "exceeds outstanding invoice balance" in err_msg or "Total completed payments" in err_msg:
+                raise AppError(
+                    code="OVERPAYMENT_NOT_ALLOWED",
+                    message="Payment amount exceeds outstanding invoice balance.",
+                    status_code=400,
+                ) from exc
+            if "Idempotency key has already been used with different payment parameters" in err_msg:
+                raise AppError(
+                    code="CONFLICT",
+                    message="Idempotency key has already been used with different payment parameters.",
+                    status_code=409,
+                ) from exc
+            if "Cannot record payment against a cancelled invoice" in err_msg:
+                raise AppError(
+                    code="INVALID_STATUS_TRANSITION",
+                    message="Cannot record payment against a cancelled invoice.",
+                    status_code=400,
+                ) from exc
+            if "Invoice is already paid in full" in err_msg:
+                raise AppError(
+                    code="INVALID_STATUS_TRANSITION",
+                    message="Invoice is already paid in full.",
+                    status_code=400,
+                ) from exc
+            if "Payment currency" in err_msg and "does not match" in err_msg:
+                raise AppError(
+                    code="CURRENCY_MISMATCH",
+                    message="Payment currency does not match invoice currency.",
+                    status_code=400,
+                ) from exc
+            if "not found" in err_msg.lower() and "invoice" in err_msg.lower():
+                raise AppError(
+                    code="NOT_FOUND",
+                    message=f"Invoice not found.",
+                    status_code=404,
+                ) from exc
+
+            # Fallback to direct payments table insert if RPC is not present
+            if "PGRST202" in err_msg or "Could not find the function" in err_msg:
+                try:
+                    # Provide status/payment_status & created_by/recorded_by compatibility
+                    table_payload = dict(payload)
+                    table_payload["status"] = payment.payment_status.value
+                    table_payload["created_by"] = table_payload["recorded_by"]
+                    insert_res = self.client.table("payments").insert(table_payload).execute()
+                    if insert_res.data:
+                        return self._row_to_payment(insert_res.data[0])
+                    return payment
+                except Exception as insert_exc:
+                    ins_msg = str(insert_exc)
+                    if "exceeds invoice total amount" in ins_msg or "check_violation" in ins_msg:
+                        raise AppError(
+                            code="OVERPAYMENT_NOT_ALLOWED",
+                            message="Payment amount exceeds outstanding invoice balance.",
+                            status_code=400,
+                        ) from insert_exc
+                    raise insert_exc from exc
+
+            raise exc
 
     async def get(self, id: UUID) -> Optional[PaymentResponse]:
         res = self.client.table("payments").select("*").eq("id", str(id)).execute()
@@ -183,6 +275,13 @@ class SupabasePaymentRepository:
 def get_payment_repository() -> PaymentRepositoryProtocol:
     """Dependency injection provider for PaymentRepository."""
     settings = get_settings()
+
+    # Fail fast if production is configured but credentials are missing
+    if os.getenv("APP_ENV") == "production" or os.getenv("REQUIRE_PERSISTENT_STORAGE") == "true":
+        if not (settings.supabase_url and (settings.supabase_service_role_key or settings.supabase_anon_key)):
+            raise RuntimeError(
+                "Production environment requires Supabase credentials, refusing silent fallback to InMemoryPaymentRepository."
+            )
 
     if settings.supabase_url and (settings.supabase_service_role_key or settings.supabase_anon_key):
         from supabase import create_client
