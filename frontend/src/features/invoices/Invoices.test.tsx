@@ -191,6 +191,42 @@ describe('InvoicesPage', () => {
     });
   });
 
+  it('supports recording payment settlement on posted invoice and updates balance in real time', async () => {
+    renderWithProviders(<InvoicesPage />);
+
+    // View Sarah Chen's posted invoice INV-2026-0001
+    await waitFor(() => {
+      expect(screen.getByText('INV-2026-0001')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('View INV-2026-0001'));
+
+    // Verify Record Payment button is displayed
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Record Payment/i })).toBeInTheDocument();
+    });
+
+    // Click Record Payment to expand the settlement form
+    fireEvent.click(screen.getByRole('button', { name: /Record Payment/i }));
+
+    // Verify form rendered with locked currency and active idempotency key
+    expect(screen.getByText(/Record Payment Settlement \(API v1 \/payments\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Internal Settlement Recording:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Idempotency Key:/i)).toBeInTheDocument();
+
+    // Fill in payment reference and submit settlement
+    const refInput = screen.getByPlaceholderText(/e\.g\. UTR-98234-AX or Check #441/i);
+    fireEvent.change(refInput, { target: { value: 'UTR-LIVE-TEST-001' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Confirm & Record Payment/i });
+    fireEvent.click(submitBtn);
+
+    // Verify success banner appears and invoice balance updates
+    await waitFor(() => {
+      expect(screen.getByText(/successfully recorded\. Invoice balance updated\./i)).toBeInTheDocument();
+    });
+  });
+
   it('preserves genuine 404 error when querying a non-existent invoice id', async () => {
     await expect(apiClient.getInvoice('non-existent-inv-99999')).rejects.toMatchObject({
       error: {

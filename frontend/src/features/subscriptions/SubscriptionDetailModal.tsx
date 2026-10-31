@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   RefreshCw,
@@ -34,7 +34,7 @@ interface SubscriptionDetailModalProps {
 }
 
 export const SubscriptionDetailModal: React.FC<SubscriptionDetailModalProps> = ({
-  subscription,
+  subscription: initialSubscription,
   isOpen,
   onClose,
 }) => {
@@ -44,7 +44,14 @@ export const SubscriptionDetailModal: React.FC<SubscriptionDetailModalProps> = (
   const renewMutation = useRenewSubscription();
   const closeMutation = useCloseSubscription();
 
-  if (!isOpen || !subscription) return null;
+  const [activeSub, setActiveSub] = useState<Subscription | null>(initialSubscription);
+
+  useEffect(() => {
+    setActiveSub(initialSubscription);
+  }, [initialSubscription]);
+
+  if (!isOpen || !initialSubscription) return null;
+  const subscription = activeSub || initialSubscription;
 
   const isActionPending =
     pauseMutation.isPending ||
@@ -70,19 +77,35 @@ export const SubscriptionDetailModal: React.FC<SubscriptionDetailModalProps> = (
   };
 
   const handlePause = () => {
-    pauseMutation.mutate(subscription.id);
+    pauseMutation.mutate(subscription.id, {
+      onSuccess: (updated) => {
+        setActiveSub(updated);
+      },
+    });
   };
 
   const handleResume = () => {
-    resumeMutation.mutate(subscription.id);
+    resumeMutation.mutate(subscription.id, {
+      onSuccess: (updated) => {
+        setActiveSub(updated);
+      },
+    });
   };
 
   const handleRenew = () => {
-    renewMutation.mutate(subscription.id);
+    renewMutation.mutate(subscription.id, {
+      onSuccess: (updated) => {
+        setActiveSub(updated);
+      },
+    });
   };
 
   const handleClose = () => {
-    closeMutation.mutate(subscription.id);
+    closeMutation.mutate(subscription.id, {
+      onSuccess: (updated) => {
+        setActiveSub(updated);
+      },
+    });
   };
 
   const canManageLifecycle = role === 'admin' || role === 'staff';

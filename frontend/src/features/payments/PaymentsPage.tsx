@@ -21,6 +21,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Card } from '../../components/ui/Card';
 import { mockPayments } from '../../api/mocks';
+import { apiClient } from '../../api/client';
 
 type FilterStatus = 'all' | PaymentStatus;
 
@@ -39,11 +40,8 @@ export const PaymentsPage: React.FC = () => {
     search: search || undefined,
   });
 
-  // Fallback to mockPayments if backend is offline or returns empty
-  const rawPayments =
-    paymentsData?.items && paymentsData.items.length > 0
-      ? paymentsData.items
-      : mockPayments;
+  // Use query data if available, or mock fixtures when apiClient is explicitly in mock mode
+  const rawPayments = paymentsData?.items ?? (apiClient.isMockMode() ? mockPayments : []);
 
   // Filter client-side when using mock fallback
   const filteredPayments = rawPayments.filter((pay) => {
@@ -79,6 +77,12 @@ export const PaymentsPage: React.FC = () => {
             <XCircle className="w-3 h-3" /> Failed
           </span>
         );
+      case 'refunded':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <RotateCcw className="w-3 h-3" /> Refunded
+          </span>
+        );
       default:
         return <Badge variant="forest">{status}</Badge>;
     }
@@ -86,12 +90,19 @@ export const PaymentsPage: React.FC = () => {
 
   const getMethodBadge = (method: PaymentMethod) => {
     switch (method) {
-      case 'bank_transfer':
-        return <span className="text-xs text-text-secondary font-medium">Bank Wire / ACH</span>;
+      case 'card':
       case 'credit_card':
         return <span className="text-xs text-text-secondary font-medium">Credit Card</span>;
+      case 'bank_transfer':
+        return <span className="text-xs text-text-secondary font-medium">Bank Wire / ACH</span>;
+      case 'upi':
+        return <span className="text-xs text-text-secondary font-medium">UPI</span>;
+      case 'net_banking':
+        return <span className="text-xs text-text-secondary font-medium">Net Banking</span>;
       case 'ach':
         return <span className="text-xs text-text-secondary font-medium">ACH Debit</span>;
+      case 'cash':
+        return <span className="text-xs text-text-secondary font-medium">Cash</span>;
       case 'manual':
         return <span className="text-xs text-text-secondary font-medium">Manual / Check</span>;
       default:
@@ -207,7 +218,7 @@ export const PaymentsPage: React.FC = () => {
             <Filter className="w-3.5 h-3.5" />
             Status:
           </span>
-          {(['all', 'completed', 'pending', 'failed'] as FilterStatus[]).map((st) => (
+          {(['all', 'completed', 'pending', 'failed', 'refunded'] as FilterStatus[]).map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}

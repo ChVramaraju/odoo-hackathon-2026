@@ -26,8 +26,10 @@ import {
 } from '../types/invoice';
 import {
   Payment,
+  PaymentCreate,
   PaymentFilterParams,
   PaymentListResponse,
+  PaymentStatus,
 } from '../types/payment';
 import {
   CustomerProfile,
@@ -138,6 +140,15 @@ class ApiClient {
 
   public isLiveConnected(): boolean {
     return this.liveConnected;
+  }
+
+  public resetMockData() {
+    this.inMemoryProducts = [...mockProducts];
+    this.inMemoryPlans = [...mockPlans];
+    this.inMemoryQuotations = [...mockQuotations];
+    this.inMemorySubscriptions = [...mockSubscriptions];
+    this.inMemoryInvoices = mockInvoices.map((inv) => ({ ...inv }));
+    this.inMemoryPayments = mockPayments.map((p) => ({ ...p }));
   }
 
   constructor() {
@@ -340,7 +351,7 @@ class ApiClient {
         let subtotalNum = 0;
         const lines = (payload.lines || []).map((l, idx) => {
           const product = this.inMemoryProducts.find((p) => p.id === l.product_id);
-          const price = parseFloat(l.unit_price || product?.sales_price || '0.00');
+          const price = parseFloat(String(l.unit_price || product?.sales_price || '0.00'));
           const lineTotal = Math.round(price * l.quantity * 100) / 100;
           subtotalNum += lineTotal;
           return {
@@ -738,6 +749,120 @@ class ApiClient {
           page_size: 20,
         } as T;
       }
+
+      if (method === 'POST') {
+        const payload = JSON.parse(options.body as string) as PaymentCreate;
+        const amountNum = typeof payload.amount === 'number' ? payload.amount : parseFloat(String(payload.amount || '0'));
+        if (isNaN(amountNum) || amountNum <= 0) {
+          throw new ApiError('VALIDATION_ERROR', 'Payment amount must be greater than zero.', 422);
+        }
+
+        // 1. Idempotency check: if key already used, check whether request is identical
+        if (payload.idempotency_key) {
+          const existing = this.inMemoryPayments.find((p) => p.idempotency_key === payload.idempotency_key);
+          if (existing) {
+            const existingAmount = parseFloat(existing.amount);
+            const reqAmount = parseFloat(amountNum.toFixed(2));
+            const existingCurrency = (existing.currency || 'INR').toUpperCase();
+            const reqCurrency = (payload.currency || 'INR').toUpperCase();
+            if (
+              existing.invoice_id === payload.invoice_id &&
+              Math.abs(existingAmount - reqAmount) < 0.001 &&
+              existingCurrency === reqCurrency
+            ) {
+              return existing as T;
+            }
+            throw new ApiError(
+              'CONFLICT',
+              'Idempotency key has already been used with different payment parameters.',
+              409
+            );
+          }
+        }
+
+        // 2. Invoice existence & tenancy check
+        const invoice = this.inMemoryInvoices.find((inv) => inv.id === payload.invoice_id);
+        if (!invoice) {
+          throw new ApiError('NOT_FOUND', `Invoice '${payload.invoice_id}' not found.`, 404);
+        }
+
+        const callerRole = this.getCurrentCallerRole();
+        const custId = this.getCurrentCustomerId();
+        if (callerRole === 'customer' && custId && invoice.customer_id && invoice.customer_id !== custId) {
+          throw new ApiError('NOT_FOUND', `Invoice '${payload.invoice_id}' not found.`, 404);
+        }
+
+        // 3. Currency match check
+        const paymentCurrency = (payload.currency || 'INR').toUpperCase();
+        const invoiceCurrency = (invoice.currency || 'INR').toUpperCase();
+        if (paymentCurrency !== invoiceCurrency) {
+          throw new ApiError(
+            'CURRENCY_MISMATCH',
+            `Payment currency '${paymentCurrency}' does not match invoice currency '${invoiceCurrency}'.`,
+            400
+          );
+        }
+
+        // 4. Invoice status & balance checks
+        if (invoice.status === 'cancelled') {
+          throw new ApiError('INVALID_STATUS_TRANSITION', 'Cannot record payment against a cancelled invoice.', 400);
+        }
+
+        const currentBalance = parseFloat(invoice.amount_due || '0');
+        if (invoice.status === 'paid' || currentBalance <= 0) {
+          throw new ApiError('INVALID_STATUS_TRANSITION', 'Invoice is already paid in full.', 400);
+        }
+
+        // 5. Overpayment guard
+        if (amountNum > currentBalance + 0.001) {
+          throw new ApiError(
+            'OVERPAYMENT_NOT_ALLOWED',
+            `Payment amount (${amountNum.toFixed(2)}) exceeds outstanding invoice balance (${currentBalance.toFixed(2)}).`,
+            400
+          );
+        }
+
+        // 6. Update invoice balance and status
+        const newBalance = Math.max(0, currentBalance - amountNum);
+        invoice.amount_due = newBalance.toFixed(2);
+        if (newBalance === 0) {
+          invoice.status = 'paid';
+        }
+
+        // 7. Record payment
+        const rawMethod = payload.payment_method || 'manual';
+        const normalizedMethod =
+          rawMethod === 'credit_card' ? 'card' : rawMethod === 'ach' ? 'bank_transfer' : rawMethod;
+
+        const newPay: Payment = {
+          id: `pay-${Date.now().toString(36)}`,
+          payment_number: `PAY-${new Date().toISOString().slice(0, 7).replace('-', '')}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+          invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          customer_id: invoice.customer_id || custId || null,
+          customer: {
+            id: invoice.customer_id || null,
+            name: invoice.customer.name,
+            email: invoice.customer.email,
+            company: invoice.customer.company || null,
+          },
+          amount: amountNum.toFixed(2),
+          currency: paymentCurrency,
+          payment_date: payload.payment_date || new Date().toISOString(),
+          payment_method: normalizedMethod,
+          status: 'completed',
+          payment_status: 'completed',
+          transaction_reference: payload.transaction_reference || null,
+          reference_note: payload.notes || payload.transaction_reference || null,
+          notes: payload.notes || null,
+          idempotency_key: payload.idempotency_key || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        this.inMemoryPayments.unshift(newPay);
+        return newPay as T;
+      }
     }
 
     if (cleanUrl.startsWith('/payments/')) {
@@ -926,33 +1051,265 @@ class ApiClient {
     });
   }
 
-  // --- Quotations Methods (API_CONTRACTS.md) ---
+  // --- Quotations Normalization & Methods (API_CONTRACTS.md & FastAPI Schemas) ---
+
+  public normalizeQuotation(raw: any): Quotation {
+    if (!raw) return raw;
+    const rawStatus = raw.status;
+    const normalizedStatus = rawStatus === 'sent' ? 'quotation' : rawStatus;
+    const planLine = Array.isArray(raw.lines)
+      ? raw.lines.find((l: any) => l.line_type === 'plan' || l.plan_id)
+      : undefined;
+
+    return {
+      id: raw.id,
+      quotation_number: raw.quotation_number || `QT-${raw.id?.slice(0, 8)}`,
+      customer_id: raw.customer_id || null,
+      customer: raw.customer || {
+        id: raw.customer_id || null,
+        name: raw.customer_name || 'Customer ' + (raw.customer_id ? String(raw.customer_id).slice(0, 8) : 'General'),
+        email: raw.customer_email || 'client@brightloop.io',
+        company: raw.customer_company || null,
+        is_registered: true,
+      },
+      plan_id: raw.plan_id || planLine?.plan_id || '',
+      plan_name: raw.plan_name || planLine?.description || 'Subscription Plan',
+      plan_code: raw.plan_code || null,
+      billing_frequency: raw.billing_frequency || 'monthly',
+      validity_days: raw.validity_days || 30,
+      status: normalizedStatus,
+      currency: raw.currency || 'INR',
+      subtotal: typeof raw.subtotal === 'number' ? raw.subtotal.toFixed(2) : String(raw.subtotal || '0.00'),
+      tax_amount: typeof raw.tax_total === 'number' ? raw.tax_total.toFixed(2) : String(raw.tax_amount || raw.tax_total || '0.00'),
+      discount_amount: typeof raw.discount_total === 'number' ? raw.discount_total.toFixed(2) : String(raw.discount_amount || raw.discount_total || '0.00'),
+      total_amount:
+        typeof raw.total_amount === 'number'
+          ? raw.total_amount.toFixed(2)
+          : typeof raw.amount === 'number'
+            ? raw.amount.toFixed(2)
+            : String(raw.total_amount || raw.amount || '0.00'),
+      valid_until: raw.valid_until || null,
+      notes: raw.notes || null,
+      subscription_id: raw.subscription_id || null,
+      created_at: raw.created_at || new Date().toISOString(),
+      expiry_date: raw.valid_until || raw.expiry_date || new Date().toISOString(),
+      updated_at: raw.updated_at || new Date().toISOString(),
+      lines: Array.isArray(raw.lines)
+        ? raw.lines.map((l: any) => ({
+            id: l.id || `line-${Math.random().toString(36).slice(2, 7)}`,
+            line_type: l.line_type || (l.plan_id ? 'plan' : 'product'),
+            product_id: l.product_id || null,
+            product_name: l.product_name || l.description || 'Item',
+            product_type: l.product_type || 'service',
+            variant_id: l.variant_id || null,
+            variant_name: l.variant_name || null,
+            plan_id: l.plan_id || null,
+            description: l.description || '',
+            quantity: typeof l.quantity === 'number' ? l.quantity : Number(l.quantity || 1),
+            unit_price: typeof l.unit_price === 'number' ? l.unit_price.toFixed(2) : String(l.unit_price || '0.00'),
+            line_total: typeof l.line_total === 'number' ? l.line_total.toFixed(2) : String(l.line_total || '0.00'),
+            subtotal: typeof l.line_total === 'number' ? l.line_total.toFixed(2) : String(l.line_total || '0.00'),
+          }))
+        : [],
+    };
+  }
+
+  public normalizeSubscription(raw: any): Subscription {
+    if (!raw) return raw;
+    return {
+      id: raw.id,
+      subscription_number: raw.subscription_number || `SUB-${raw.id?.slice(0, 8)}`,
+      customer_id: raw.customer_id || null,
+      customer: raw.customer || {
+        id: raw.customer_id || null,
+        name: raw.customer_name || 'Customer ' + (raw.customer_id ? String(raw.customer_id).slice(0, 8) : 'Client'),
+        email: raw.customer_email || 'client@brightloop.io',
+        company: raw.customer_company || null,
+      },
+      plan_id: raw.plan_id || '',
+      plan_name: raw.plan?.name || raw.plan_name || 'Active Subscription Plan',
+      plan_code: raw.plan?.code || raw.plan_code || null,
+      billing_frequency: raw.billing_frequency || 'monthly',
+      billing_interval: raw.billing_interval || 1,
+      start_date: raw.start_date || new Date().toISOString(),
+      end_date: raw.end_date || null,
+      next_billing_date: raw.next_billing_date || new Date().toISOString(),
+      payment_terms: raw.payment_terms || null,
+      end_of_term_behavior: raw.end_of_term_behavior || 'renew',
+      status: raw.status || 'active',
+      currency: raw.currency || 'INR',
+      subtotal: typeof raw.subtotal === 'number' ? raw.subtotal.toFixed(2) : String(raw.subtotal || '0.00'),
+      tax_amount: typeof raw.tax_total === 'number' ? raw.tax_total.toFixed(2) : String(raw.tax_amount || raw.tax_total || '0.00'),
+      total_amount:
+        typeof raw.total_amount === 'number'
+          ? raw.total_amount.toFixed(2)
+          : typeof raw.amount === 'number'
+            ? raw.amount.toFixed(2)
+            : String(raw.total_amount || raw.amount || '0.00'),
+      quotation_id: raw.quotation_id || null,
+      notes: raw.notes || null,
+      created_at: raw.created_at || new Date().toISOString(),
+      updated_at: raw.updated_at || new Date().toISOString(),
+      lines: Array.isArray(raw.lines)
+        ? raw.lines.map((l: any) => ({
+            id: l.id || `subline-${Math.random().toString(36).slice(2, 7)}`,
+            product_id: l.product_id || '',
+            product_name: l.product_name || l.description || 'Service',
+            product_type: l.product_type || 'service',
+            variant_id: l.variant_id || null,
+            variant_name: l.variant_name || null,
+            quantity: typeof l.quantity === 'number' ? l.quantity : Number(l.quantity || 1),
+            unit_price: typeof l.unit_price === 'number' ? l.unit_price.toFixed(2) : String(l.unit_price || '0.00'),
+            tax_rate: l.tax_rate !== undefined ? String(l.tax_rate) : undefined,
+            line_total: typeof l.line_total === 'number' ? l.line_total.toFixed(2) : String(l.line_total || '0.00'),
+          }))
+        : [],
+    };
+  }
+
+  public normalizeInvoice(raw: any): Invoice {
+    if (!raw) return raw;
+    const rawStatus = raw.status;
+    const normalizedStatus = rawStatus === 'confirmed' ? 'posted' : rawStatus;
+
+    return {
+      id: raw.id,
+      invoice_number: raw.invoice_number || `INV-${raw.id?.slice(0, 8)}`,
+      customer_id: raw.customer_id || null,
+      customer: raw.customer || {
+        id: raw.customer_id || null,
+        name: raw.customer_name || 'Customer ' + (raw.customer_id ? String(raw.customer_id).slice(0, 8) : 'Client'),
+        email: raw.customer_email || 'client@brightloop.io',
+        company: raw.customer_company || null,
+      },
+      subscription_id: raw.subscription_id || null,
+      subscription_number: raw.subscription_number || null,
+      billing_period_start: raw.billing_period_start || null,
+      billing_period_end: raw.billing_period_end || null,
+      issue_date: raw.invoice_date || raw.issue_date || raw.created_at || new Date().toISOString(),
+      invoice_date: raw.invoice_date || raw.issue_date || raw.created_at || new Date().toISOString(),
+      due_date: raw.due_date || new Date().toISOString(),
+      status: normalizedStatus,
+      currency: raw.currency || 'INR',
+      subtotal: typeof raw.subtotal === 'number' ? raw.subtotal.toFixed(2) : String(raw.subtotal || '0.00'),
+      tax_amount: typeof raw.tax_total === 'number' ? raw.tax_total.toFixed(2) : String(raw.tax_amount || raw.tax_total || '0.00'),
+      discount_amount: typeof raw.discount_total === 'number' ? raw.discount_total.toFixed(2) : String(raw.discount_amount || raw.discount_total || '0.00'),
+      total_amount:
+        typeof raw.total_amount === 'number'
+          ? raw.total_amount.toFixed(2)
+          : typeof raw.amount === 'number'
+            ? raw.amount.toFixed(2)
+            : String(raw.total_amount || raw.amount || '0.00'),
+      amount_paid: typeof raw.amount_paid === 'number' ? raw.amount_paid.toFixed(2) : String(raw.amount_paid || '0.00'),
+      amount_due: typeof raw.balance === 'number' ? raw.balance.toFixed(2) : String(raw.balance ?? raw.amount_due ?? '0.00'),
+      balance: typeof raw.balance === 'number' ? raw.balance.toFixed(2) : String(raw.balance ?? raw.amount_due ?? '0.00'),
+      lines: Array.isArray(raw.lines)
+        ? raw.lines.map((l: any) => ({
+            id: l.id || `invline-${Math.random().toString(36).slice(2, 7)}`,
+            description: l.description || 'Line Item',
+            quantity: typeof l.quantity === 'number' ? l.quantity : Number(l.quantity || 1),
+            unit_price: typeof l.unit_price === 'number' ? l.unit_price.toFixed(2) : String(l.unit_price || '0.00'),
+            tax_amount: typeof l.tax_amount === 'number' ? l.tax_amount.toFixed(2) : String(l.tax_amount || '0.00'),
+            discount_amount: typeof l.discount_amount === 'number' ? l.discount_amount.toFixed(2) : String(l.discount_amount || '0.00'),
+            line_total: typeof l.line_total === 'number' ? l.line_total.toFixed(2) : String(l.line_total || '0.00'),
+          }))
+        : [],
+      notes: raw.notes || null,
+      created_at: raw.created_at || new Date().toISOString(),
+      updated_at: raw.updated_at || new Date().toISOString(),
+    };
+  }
 
   public async getQuotations(params?: { status?: string; search?: string; page?: number; page_size?: number }): Promise<QuotationListResponse> {
     const searchParams = new URLSearchParams();
-    if (params?.status) searchParams.append('status', params.status);
+    if (params?.status) {
+      const backendStatus = params.status === 'quotation' ? 'sent' : params.status;
+      searchParams.append('status', backendStatus);
+    }
     if (params?.search) searchParams.append('search', params.search);
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.page_size) searchParams.append('page_size', String(params.page_size));
     const qs = searchParams.toString();
-    return this.request<QuotationListResponse>(`/quotations${qs ? `?${qs}` : ''}`);
+    const res = await this.request<QuotationListResponse>(`/quotations${qs ? `?${qs}` : ''}`);
+    if (res && Array.isArray(res.items)) {
+      return {
+        ...res,
+        items: res.items.map((item: any) => this.normalizeQuotation(item)),
+      };
+    }
+    return res;
   }
 
   public async getQuotation(id: string): Promise<Quotation> {
-    return this.request<Quotation>(`/quotations/${id}`);
+    const raw = await this.request<any>(`/quotations/${id}`);
+    return this.normalizeQuotation(raw);
   }
 
   public async createQuotation(payload: QuotationCreate): Promise<Quotation> {
-    return this.request<Quotation>('/quotations', {
+    if (this.isMockMode()) {
+      return this.handleMockFallback<Quotation>('/quotations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
+
+    // Build exact FastAPI QuotationCreate schema: lines contain plan and products
+    const backendLines: any[] = [];
+    if (payload.plan_id) {
+      backendLines.push({
+        line_type: 'plan',
+        plan_id: payload.plan_id,
+        quantity: 1,
+        description: 'Selected Subscription Plan',
+      });
+    }
+
+    if (Array.isArray(payload.lines)) {
+      for (const line of payload.lines) {
+        if (line.product_id) {
+          backendLines.push({
+            line_type: 'product',
+            product_id: line.product_id,
+            variant_id: line.variant_id || undefined,
+            quantity: typeof line.quantity === 'number' ? line.quantity : 1,
+            unit_price: line.unit_price ? Number(line.unit_price) : undefined,
+            discount_percentage: line.discount_percentage || 0,
+            tax_rate: line.tax_rate || 0,
+            description: line.description || undefined,
+          });
+        } else if (line.plan_id && line.plan_id !== payload.plan_id) {
+          backendLines.push({
+            line_type: 'plan',
+            plan_id: line.plan_id,
+            quantity: line.quantity || 1,
+            unit_price: line.unit_price ? Number(line.unit_price) : undefined,
+            description: line.description || undefined,
+          });
+        }
+      }
+    }
+
+    const backendPayload = {
+      customer_id: payload.customer_id || undefined,
+      currency: payload.currency || 'INR',
+      valid_until: payload.valid_until || (payload.validity_days ? new Date(Date.now() + payload.validity_days * 86400000).toISOString().split('T')[0] : undefined),
+      notes: payload.notes || undefined,
+      lines: backendLines,
+    };
+
+    const raw = await this.request<any>('/quotations', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(backendPayload),
     });
+
+    return this.normalizeQuotation(raw);
   }
 
   public async confirmQuotation(id: string): Promise<Quotation> {
-    return this.request<Quotation>(`/quotations/${id}/confirm`, {
+    const raw = await this.request<any>(`/quotations/${id}/confirm`, {
       method: 'POST',
     });
+    return this.normalizeQuotation(raw);
   }
 
   // --- Subscriptions Methods (API_CONTRACTS.md) ---
@@ -964,79 +1321,187 @@ class ApiClient {
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.page_size) searchParams.append('page_size', String(params.page_size));
     const qs = searchParams.toString();
-    return this.request<SubscriptionListResponse>(`/subscriptions${qs ? `?${qs}` : ''}`);
+    const res = await this.request<SubscriptionListResponse>(`/subscriptions${qs ? `?${qs}` : ''}`);
+    if (res && Array.isArray(res.items)) {
+      return {
+        ...res,
+        items: res.items.map((item: any) => this.normalizeSubscription(item)),
+      };
+    }
+    return res;
   }
 
   public async getSubscription(id: string): Promise<Subscription> {
-    return this.request<Subscription>(`/subscriptions/${id}`);
+    const raw = await this.request<any>(`/subscriptions/${id}`);
+    return this.normalizeSubscription(raw);
   }
 
   public async pauseSubscription(id: string): Promise<Subscription> {
-    return this.request<Subscription>(`/subscriptions/${id}/pause`, {
+    const raw = await this.request<any>(`/subscriptions/${id}/pause`, {
       method: 'POST',
     });
+    return this.normalizeSubscription(raw);
   }
 
   public async resumeSubscription(id: string): Promise<Subscription> {
-    return this.request<Subscription>(`/subscriptions/${id}/resume`, {
+    const raw = await this.request<any>(`/subscriptions/${id}/resume`, {
       method: 'POST',
     });
+    return this.normalizeSubscription(raw);
   }
 
   public async renewSubscription(id: string): Promise<Subscription> {
-    return this.request<Subscription>(`/subscriptions/${id}/renew`, {
+    const raw = await this.request<any>(`/subscriptions/${id}/renew`, {
       method: 'POST',
     });
+    return this.normalizeSubscription(raw);
   }
 
   public async closeSubscription(id: string): Promise<Subscription> {
-    return this.request<Subscription>(`/subscriptions/${id}/close`, {
+    const raw = await this.request<any>(`/subscriptions/${id}/close`, {
       method: 'POST',
     });
+    return this.normalizeSubscription(raw);
   }
 
   // --- Invoices Methods (API_CONTRACTS.md) ---
 
   public async getInvoices(params?: InvoiceFilterParams): Promise<InvoiceListResponse> {
     const searchParams = new URLSearchParams();
-    if (params?.status) searchParams.append('status', params.status);
+    if (params?.status) {
+      const backendStatus = params.status === 'posted' ? 'confirmed' : params.status;
+      searchParams.append('status', backendStatus);
+    }
     if (params?.search) searchParams.append('search', params.search);
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.page_size) searchParams.append('page_size', String(params.page_size));
     const qs = searchParams.toString();
-    return this.request<InvoiceListResponse>(`/invoices${qs ? `?${qs}` : ''}`);
+    const res = await this.request<InvoiceListResponse>(`/invoices${qs ? `?${qs}` : ''}`);
+    if (res && Array.isArray(res.items)) {
+      return {
+        ...res,
+        items: res.items.map((item: any) => this.normalizeInvoice(item)),
+      };
+    }
+    return res;
   }
 
   public async getInvoice(id: string): Promise<Invoice> {
-    return this.request<Invoice>(`/invoices/${id}`);
+    const raw = await this.request<any>(`/invoices/${id}`);
+    return this.normalizeInvoice(raw);
   }
 
   public async confirmInvoice(id: string): Promise<Invoice> {
-    return this.request<Invoice>(`/invoices/${id}/confirm`, {
+    const raw = await this.request<any>(`/invoices/${id}/confirm`, {
       method: 'POST',
     });
+    return this.normalizeInvoice(raw);
   }
 
   public async cancelInvoice(id: string): Promise<Invoice> {
-    return this.request<Invoice>(`/invoices/${id}/cancel`, {
+    const raw = await this.request<any>(`/invoices/${id}/cancel`, {
       method: 'POST',
     });
+    return this.normalizeInvoice(raw);
   }
 
   // --- Payments Methods (API_CONTRACTS.md, DOMAIN_MODULES.md) ---
 
+  public normalizePayment(raw: any): Payment {
+    if (!raw) return raw;
+    const rawStatus = raw.payment_status || raw.status || 'completed';
+    const rawMethod = raw.payment_method || 'manual';
+    const normalizedMethod = rawMethod;
+
+    return {
+      id: raw.id,
+      payment_number: raw.payment_number || `PAY-${raw.id?.slice(0, 8)}`,
+      invoice_id: raw.invoice_id || '',
+      invoice_number:
+        raw.invoice_number ||
+        raw.invoice?.invoice_number ||
+        (raw.invoice_id ? `INV-${String(raw.invoice_id).slice(0, 8)}` : 'INV-UNKNOWN'),
+      customer_id: raw.customer_id || null,
+      customer: raw.customer || {
+        id: raw.customer_id || null,
+        name: raw.customer_name || 'Customer ' + (raw.customer_id ? String(raw.customer_id).slice(0, 8) : 'Client'),
+        email: raw.customer_email || 'client@brightloop.io',
+        company: raw.customer_company || null,
+      },
+      amount:
+        typeof raw.amount === 'number'
+          ? raw.amount.toFixed(2)
+          : String(raw.amount || '0.00'),
+      currency: raw.currency || 'INR',
+      payment_date: raw.payment_date || raw.created_at || new Date().toISOString(),
+      payment_method: normalizedMethod,
+      status: rawStatus as PaymentStatus,
+      payment_status: rawStatus as PaymentStatus,
+      transaction_reference: raw.transaction_reference || null,
+      reference_note: raw.reference_note || raw.notes || raw.transaction_reference || null,
+      notes: raw.notes || null,
+      idempotency_key: raw.idempotency_key || null,
+      recorded_by: raw.recorded_by || null,
+      created_at: raw.created_at || new Date().toISOString(),
+      updated_at: raw.updated_at || new Date().toISOString(),
+    };
+  }
+
   public async getPayments(params?: PaymentFilterParams): Promise<PaymentListResponse> {
     const searchParams = new URLSearchParams();
-    if (params?.status) searchParams.append('status', params.status);
+    if (params?.customer_id) searchParams.append('customer_id', params.customer_id);
+    if (params?.invoice_id) searchParams.append('invoice_id', params.invoice_id);
+    if (params?.status && params.status !== 'all') searchParams.append('status', params.status);
     if (params?.search) searchParams.append('search', params.search);
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.page_size) searchParams.append('page_size', String(params.page_size));
     const qs = searchParams.toString();
-    return this.request<PaymentListResponse>(`/payments${qs ? `?${qs}` : ''}`);
+    const res = await this.request<PaymentListResponse>(`/payments${qs ? `?${qs}` : ''}`);
+    if (res && Array.isArray(res.items)) {
+      return {
+        ...res,
+        items: res.items.map((item: any) => this.normalizePayment(item)),
+      };
+    }
+    return res;
   }
 
   public async getPayment(id: string): Promise<Payment> {
-    return this.request<Payment>(`/payments/${id}`);
+    const raw = await this.request<any>(`/payments/${id}`);
+    return this.normalizePayment(raw);
+  }
+
+  public async createPayment(payload: PaymentCreate): Promise<Payment> {
+    if (this.isMockMode()) {
+      return this.handleMockFallback<Payment>('/payments', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
+
+    const amountNum = typeof payload.amount === 'number' ? payload.amount : parseFloat(String(payload.amount));
+    const backendPayload = {
+      invoice_id: payload.invoice_id,
+      amount: Number(amountNum.toFixed(2)),
+      currency: (payload.currency || 'INR').toUpperCase(),
+      payment_method:
+        payload.payment_method === 'credit_card'
+          ? 'card'
+          : payload.payment_method === 'ach'
+            ? 'bank_transfer'
+            : payload.payment_method || 'manual',
+      transaction_reference: payload.transaction_reference || undefined,
+      idempotency_key: payload.idempotency_key || undefined,
+      payment_date: payload.payment_date || undefined,
+      notes: payload.notes || undefined,
+    };
+
+    const raw = await this.request<any>('/payments', {
+      method: 'POST',
+      body: JSON.stringify(backendPayload),
+    });
+
+    return this.normalizePayment(raw);
   }
 
   // --- Customer Portal Methods (API_CONTRACTS.md, DOMAIN_MODULES.md) ---
@@ -1065,7 +1530,14 @@ class ApiClient {
   }
 
   public async getPortalPayments(): Promise<PaymentListResponse> {
-    return this.request<PaymentListResponse>('/portal/payments');
+    const res = await this.request<PaymentListResponse>(this.isMockMode() ? '/portal/payments' : '/payments');
+    if (res && Array.isArray(res.items)) {
+      return {
+        ...res,
+        items: res.items.map((item: any) => this.normalizePayment(item)),
+      };
+    }
+    return res;
   }
 }
 

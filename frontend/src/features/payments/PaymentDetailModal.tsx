@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
+  RotateCcw,
   FileText,
 } from 'lucide-react';
 import { Payment, PaymentMethod, PaymentStatus } from '../../types/payment';
@@ -52,6 +53,12 @@ export const PaymentDetailModal: React.FC<PaymentDetailModalProps> = ({
             <XCircle className="w-3.5 h-3.5" /> Failed / Declined
           </span>
         );
+      case 'refunded':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <RotateCcw className="w-3.5 h-3.5" /> Refunded
+          </span>
+        );
       default:
         return <Badge variant="forest">{status}</Badge>;
     }
@@ -59,12 +66,19 @@ export const PaymentDetailModal: React.FC<PaymentDetailModalProps> = ({
 
   const getMethodLabel = (method: PaymentMethod) => {
     switch (method) {
+      case 'card':
+      case 'credit_card':
+        return 'Credit / Debit Card';
       case 'bank_transfer':
         return 'Bank Transfer / Wire';
-      case 'credit_card':
-        return 'Credit Card';
+      case 'upi':
+        return 'UPI Payment';
+      case 'net_banking':
+        return 'Net Banking';
       case 'ach':
         return 'ACH Direct Debit';
+      case 'cash':
+        return 'Cash Settlement';
       case 'manual':
         return 'Manual / Ledger Entry';
       default:
