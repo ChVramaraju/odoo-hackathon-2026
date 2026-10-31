@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS quotations (
     status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'confirmed', 'cancelled')),
     currency VARCHAR(3) NOT NULL DEFAULT 'INR' CHECK (length(currency) = 3),
     subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (subtotal >= 0),
-    discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (discount_amount >= 0),
-    tax_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (tax_amount >= 0),
+    discount_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (discount_total >= 0),
+    tax_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (tax_total >= 0),
     total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (total_amount >= 0),
     valid_until DATE,
     confirmed_at TIMESTAMPTZ,
@@ -94,23 +94,26 @@ CREATE INDEX IF NOT EXISTS idx_quotations_created_at ON quotations (created_at D
 CREATE TABLE IF NOT EXISTS quotation_lines (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     quotation_id UUID NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+    line_type VARCHAR(20) NOT NULL DEFAULT 'product' CHECK (line_type IN ('product', 'plan')),
     product_id UUID REFERENCES products(id) ON DELETE RESTRICT,
-    product_variant_id UUID REFERENCES product_variants(id) ON DELETE RESTRICT,
+    variant_id UUID REFERENCES product_variants(id) ON DELETE RESTRICT,
     plan_id UUID REFERENCES plans(id) ON DELETE RESTRICT,
     line_number INTEGER NOT NULL DEFAULT 1 CHECK (line_number >= 1),
     description TEXT NOT NULL CHECK (trim(description) <> ''),
     quantity NUMERIC(10, 2) NOT NULL DEFAULT 1.00 CHECK (quantity > 0),
     unit_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (unit_price >= 0),
-    discount_percent NUMERIC(5, 2) NOT NULL DEFAULT 0.00 CHECK (discount_percent >= 0 AND discount_percent <= 100),
+    discount_percentage NUMERIC(5, 2) NOT NULL DEFAULT 0.00 CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
     discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (discount_amount >= 0),
     tax_rate NUMERIC(5, 2) NOT NULL DEFAULT 0.00 CHECK (tax_rate >= 0 AND tax_rate <= 100),
     tax_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (tax_amount >= 0),
     subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (subtotal >= 0),
-    total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (total_amount >= 0),
+    line_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (line_total >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_quotation_line_item CHECK (
-        product_id IS NOT NULL OR plan_id IS NOT NULL OR trim(description) <> ''
+        (product_id IS NOT NULL AND plan_id IS NULL) OR
+        (plan_id IS NOT NULL AND product_id IS NULL AND variant_id IS NULL) OR
+        (product_id IS NULL AND plan_id IS NULL AND trim(description) <> '')
     )
 );
 
@@ -120,7 +123,7 @@ CREATE TRIGGER trg_quotation_lines_updated_at
 BEFORE UPDATE ON quotation_lines
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Quotation line math consistency trigger (calculates subtotal, discount, tax, total)
+-- Quotation line math consistency and line_type synchronization trigger
 CREATE OR REPLACE FUNCTION calculate_quotation_line_amounts()
 RETURNS TRIGGER
 SET search_path = public
@@ -128,12 +131,19 @@ AS $$
 DECLARE
     v_taxable_base NUMERIC(12, 2);
 BEGIN
+    -- Synchronize line_type based on referenced entity
+    IF NEW.plan_id IS NOT NULL THEN
+        NEW.line_type = 'plan';
+    ELSIF NEW.product_id IS NOT NULL THEN
+        NEW.line_type = 'product';
+    END IF;
+
     -- Calculate gross subtotal: quantity * unit_price
     NEW.subtotal = round(NEW.quantity * NEW.unit_price, 2);
     
     -- Calculate discount if percentage provided and amount not manually specified
-    IF NEW.discount_percent > 0 AND (NEW.discount_amount IS NULL OR NEW.discount_amount = 0) THEN
-        NEW.discount_amount = round(NEW.subtotal * (NEW.discount_percent / 100.0), 2);
+    IF NEW.discount_percentage > 0 AND (NEW.discount_amount IS NULL OR NEW.discount_amount = 0) THEN
+        NEW.discount_amount = round(NEW.subtotal * (NEW.discount_percentage / 100.0), 2);
     ELSIF NEW.discount_amount IS NULL THEN
         NEW.discount_amount = 0.00;
     END IF;
@@ -149,7 +159,7 @@ BEGIN
     END IF;
     
     -- Final line total
-    NEW.total_amount = greatest(0.00, v_taxable_base + NEW.tax_amount);
+    NEW.line_total = greatest(0.00, v_taxable_base + NEW.tax_amount);
     
     RETURN NEW;
 END;
@@ -172,8 +182,8 @@ BEGIN
     
     UPDATE quotations
     SET subtotal = COALESCE(lines.agg_subtotal, 0.00),
-        discount_amount = COALESCE(lines.agg_discount, 0.00),
-        tax_amount = COALESCE(lines.agg_tax, 0.00),
+        discount_total = COALESCE(lines.agg_discount, 0.00),
+        tax_total = COALESCE(lines.agg_tax, 0.00),
         total_amount = COALESCE(lines.agg_total, 0.00),
         updated_at = now()
     FROM (
@@ -181,7 +191,7 @@ BEGIN
             SUM(subtotal) AS agg_subtotal,
             SUM(discount_amount) AS agg_discount,
             SUM(tax_amount) AS agg_tax,
-            SUM(total_amount) AS agg_total
+            SUM(line_total) AS agg_total
         FROM quotation_lines
         WHERE quotation_id = v_quotation_id
     ) lines
@@ -198,8 +208,9 @@ FOR EACH ROW EXECUTE FUNCTION sync_quotation_totals();
 
 -- Quotation lines indexes
 CREATE INDEX IF NOT EXISTS idx_quotation_lines_quotation_id ON quotation_lines (quotation_id);
+CREATE INDEX IF NOT EXISTS idx_quotation_lines_line_type ON quotation_lines (line_type);
 CREATE INDEX IF NOT EXISTS idx_quotation_lines_product_id ON quotation_lines (product_id);
-CREATE INDEX IF NOT EXISTS idx_quotation_lines_variant_id ON quotation_lines (product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_quotation_lines_variant_id ON quotation_lines (variant_id);
 CREATE INDEX IF NOT EXISTS idx_quotation_lines_plan_id ON quotation_lines (plan_id);
 
 -- ============================================================================

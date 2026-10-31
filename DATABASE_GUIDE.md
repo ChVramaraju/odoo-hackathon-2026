@@ -160,8 +160,8 @@ Header record for a customer quotation, establishing business reference, currenc
 | `status` | `VARCHAR(20)` | No | `'draft'` | `CHECK (status IN ('draft', 'sent', 'confirmed', 'cancelled'))` | Lifecycle state |
 | `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | Currency ISO code (default INR) |
 | `subtotal` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (subtotal >= 0)` | Aggregated gross sum of lines |
-| `discount_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_amount >= 0)` | Total line discounts |
-| `tax_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_amount >= 0)` | Total line taxes |
+| `discount_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_total >= 0)` | Aggregated line discounts |
+| `tax_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_total >= 0)` | Aggregated line taxes |
 | `total_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (total_amount >= 0)` | Net payable amount (subtotal - discount + tax) |
 | `valid_until` | `DATE` | Yes | `NULL` | — | Quotation validity expiration date |
 | `confirmed_at` | `TIMESTAMPTZ` | Yes | `NULL` | `CHECK (confirmed_at >= created_at)` | Timestamp when confirmed |
@@ -191,25 +191,26 @@ Individual itemized detail rows snapshotting catalog products/variants/plans wit
 |---|---|---|---|---|---|
 | `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | Line item UUID |
 | `quotation_id` | `UUID` | No | — | `REFERENCES quotations(id) ON DELETE CASCADE` | Parent quotation reference |
+| `line_type` | `VARCHAR(20)` | No | `'product'` | `CHECK (line_type IN ('product', 'plan'))` | Distinguishes product vs plan line |
 | `product_id` | `UUID` | Yes | `NULL` | `REFERENCES products(id) ON DELETE RESTRICT` | Referenced product |
-| `product_variant_id`| `UUID` | Yes | `NULL` | `REFERENCES product_variants(id) ON DELETE RESTRICT`| Referenced product variant |
+| `variant_id` | `UUID` | Yes | `NULL` | `REFERENCES product_variants(id) ON DELETE RESTRICT`| Referenced product variant |
 | `plan_id` | `UUID` | Yes | `NULL` | `REFERENCES plans(id) ON DELETE RESTRICT` | Referenced plan |
 | `line_number` | `INTEGER` | No | `1` | `CHECK (line_number >= 1)` | Sequence / display order |
 | `description` | `TEXT` | No | — | `CHECK (trim(description) <> '')` | Snapshot description at quote creation |
 | `quantity` | `NUMERIC(10, 2)`| No | `1.00` | `CHECK (quantity > 0)` | Line item quantity |
 | `unit_price` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (unit_price >= 0)` | Snapshot agreed unit price |
-| `discount_percent`| `NUMERIC(5, 2)` | No | `0.00` | `CHECK (discount_percent BETWEEN 0 AND 100)` | Line discount percentage |
+| `discount_percentage`| `NUMERIC(5, 2)` | No | `0.00` | `CHECK (discount_percentage BETWEEN 0 AND 100)` | Line discount percentage |
 | `discount_amount` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (discount_amount >= 0)` | Line discount amount |
 | `tax_rate` | `NUMERIC(5, 2)` | No | `0.00` | `CHECK (tax_rate BETWEEN 0 AND 100)` | Applicable tax rate percentage |
 | `tax_amount` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (tax_amount >= 0)` | Calculated tax amount |
 | `subtotal` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (subtotal >= 0)` | Gross amount (`quantity * unit_price`) |
-| `total_amount` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (total_amount >= 0)` | Line total (`subtotal - discount + tax`) |
+| `line_total` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (line_total >= 0)` | Net line total (`subtotal - discount + tax`) |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | Creation timestamp |
 | `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | Last modification timestamp |
 
 *Catalog Deletion Protection & Automated Math Integrity:*
-- `ON DELETE RESTRICT` on `product_id`, `product_variant_id`, and `plan_id` prevents deleting catalog entries that have been quoted, protecting financial audit history.
-- `trg_quotation_lines_calculate BEFORE INSERT OR UPDATE`: Automatically computes and enforces `subtotal`, `discount_amount`, `tax_amount`, and `total_amount`.
+- `ON DELETE RESTRICT` on `product_id`, `variant_id`, and `plan_id` prevents deleting catalog entries that have been quoted, protecting financial audit history.
+- `trg_quotation_lines_calculate BEFORE INSERT OR UPDATE`: Automatically synchronizes `line_type` and computes `subtotal`, `discount_amount`, `tax_amount`, and `line_total`.
 - `trg_quotation_lines_sync_totals AFTER INSERT OR UPDATE OR DELETE`: Automatically synchronizes aggregated subtotals, discounts, taxes, and total amounts to the parent `quotations` header.
 
 ---
