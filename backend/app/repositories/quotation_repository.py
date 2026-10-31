@@ -149,26 +149,30 @@ class SupabaseQuotationRepository:
         from datetime import date
 
         raw_valid = row.get("valid_until")
-        valid_until = date.fromisoformat(raw_valid) if raw_valid else None
+        valid_until = date.fromisoformat(raw_valid) if isinstance(raw_valid, str) else raw_valid
         raw_confirmed = row.get("confirmed_at")
-        confirmed_at = datetime.fromisoformat(raw_confirmed) if raw_confirmed else None
+        confirmed_at = datetime.fromisoformat(raw_confirmed) if isinstance(raw_confirmed, str) else raw_confirmed
+        raw_created = row.get("created_at")
+        created_at = datetime.fromisoformat(raw_created) if isinstance(raw_created, str) else (raw_created or datetime.now())
+        raw_updated = row.get("updated_at")
+        updated_at = datetime.fromisoformat(raw_updated) if isinstance(raw_updated, str) else (raw_updated or datetime.now())
 
         return QuotationResponse(
-            id=UUID(row["id"]),
-            quotation_number=row["quotation_number"],
-            customer_id=UUID(row["customer_id"]),
+            id=UUID(str(row["id"])),
+            quotation_number=str(row["quotation_number"]),
+            customer_id=UUID(str(row["customer_id"])),
             status=QuotationStatus(row.get("status", "draft")),
-            currency=row.get("currency", "INR"),
+            currency=str(row.get("currency", "INR")),
             subtotal=Decimal(str(row.get("subtotal", "0.00"))).quantize(Decimal("0.01")),
             discount_total=Decimal(str(row.get("discount_total", "0.00"))).quantize(Decimal("0.01")),
             tax_total=Decimal(str(row.get("tax_total", "0.00"))).quantize(Decimal("0.01")),
             total_amount=Decimal(str(row.get("total_amount", "0.00"))).quantize(Decimal("0.01")),
             valid_until=valid_until,
             notes=row.get("notes"),
-            created_by=UUID(row["created_by"]) if row.get("created_by") else None,
+            created_by=UUID(str(row["created_by"])) if row.get("created_by") else None,
             confirmed_at=confirmed_at,
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
+            created_at=created_at,
+            updated_at=updated_at,
             lines=lines,
         )
 
@@ -189,44 +193,76 @@ class SupabaseQuotationRepository:
             "confirmed_at": quotation.confirmed_at.isoformat() if quotation.confirmed_at else None,
         }
 
+        lines_payload = [
+            {
+                "id": str(line.id),
+                "quotation_id": str(quotation.id),
+                "line_type": line.line_type.value,
+                "line_number": idx + 1,
+                "product_id": str(line.product_id) if line.product_id else None,
+                "variant_id": str(line.variant_id) if line.variant_id else None,
+                "plan_id": str(line.plan_id) if line.plan_id else None,
+                "description": line.description,
+                "quantity": str(line.quantity),
+                "unit_price": str(line.unit_price),
+                "discount_percentage": str(line.discount_percentage),
+                "discount_amount": str(line.discount_amount),
+                "tax_rate": str(line.tax_rate),
+                "tax_amount": str(line.tax_amount),
+                "line_total": str(line.line_total),
+            }
+            for idx, line in enumerate(quotation.lines)
+        ]
+
+        # Call PostgreSQL create_quotation_atomic(p_header, p_lines) RPC function.
+        # This guarantees true ACID transaction atomicity: both header and lines persist
+        # together or roll back completely on any constraint or business rule violation.
         try:
-            self.client.table("quotations").insert(header_payload).execute()
-            if quotation.lines:
-                lines_payload = [
-                    {
-                        "id": str(line.id),
-                        "quotation_id": str(quotation.id),
-                        "line_type": line.line_type.value,
-                        "line_number": idx + 1,
-                        "product_id": str(line.product_id) if line.product_id else None,
-                        "variant_id": str(line.variant_id) if line.variant_id else None,
-                        "plan_id": str(line.plan_id) if line.plan_id else None,
-                        "description": line.description,
-                        "quantity": str(line.quantity),
-                        "unit_price": str(line.unit_price),
-                        "discount_percentage": str(line.discount_percentage),
-                        "discount_amount": str(line.discount_amount),
-                        "tax_rate": str(line.tax_rate),
-                        "tax_amount": str(line.tax_amount),
-                        "line_total": str(line.line_total),
-                    }
-                    for idx, line in enumerate(quotation.lines)
-                ]
-                self.client.table("quotation_lines").insert(lines_payload).execute()
+            res = self.client.rpc(
+                "create_quotation_atomic",
+                {
+                    "p_header": header_payload,
+                    "p_lines": lines_payload,
+                },
+            ).execute()
         except Exception as exc:
-            # COMPENSATING DELETION PATTERN:
-            # Note: This is an application-level compensating action, NOT genuine PostgreSQL ACID
-            # transaction atomicity. If this backend process crashes or network disconnects between
-            # the header insert and line insert, an orphaned header remains. For genuine PostgreSQL
-            # atomicity, migration 20261031000002_quotations.sql can provide a stored procedure RPC
-            # (e.g. create_quotation_with_lines()) or PostgREST single-request nested inserts.
-            try:
-                self.client.table("quotations").delete().eq("id", str(quotation.id)).execute()
-            except Exception:
-                pass
+            # Propagate database RPC errors directly without masking
             raise exc
 
-        return quotation
+        raw_data = res.data if res else None
+        if not raw_data:
+            raise RuntimeError(
+                f"create_quotation_atomic returned no data for quotation {quotation.id}"
+            )
+
+        if isinstance(raw_data, list) and raw_data:
+            raw_data = raw_data[0]
+
+        if isinstance(raw_data, str):
+            import json
+            raw_data = json.loads(raw_data)
+
+        # Map child lines: prefer lines returned by RPC/DB query; fallback to provided lines
+        lines: list[QuotationLineResponse] = []
+        if isinstance(raw_data, dict) and "lines" in raw_data and raw_data["lines"]:
+            lines = [self._row_to_line(r) for r in raw_data["lines"]]
+        else:
+            try:
+                lines_res = (
+                    self.client.table("quotation_lines")
+                    .select("*")
+                    .eq("quotation_id", str(quotation.id))
+                    .order("created_at")
+                    .execute()
+                )
+                if lines_res and lines_res.data:
+                    lines = [self._row_to_line(r) for r in lines_res.data]
+                else:
+                    lines = quotation.lines
+            except Exception:
+                lines = quotation.lines
+
+        return self._row_to_quotation(raw_data, lines)
 
     async def get(self, id: UUID) -> Optional[QuotationResponse]:
         res = self.client.table("quotations").select("*").eq("id", str(id)).execute()
