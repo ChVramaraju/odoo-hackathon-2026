@@ -66,6 +66,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- Invoices status transition automation trigger
 CREATE OR REPLACE FUNCTION handle_invoice_status_transition()
 RETURNS TRIGGER
+SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
@@ -200,6 +201,7 @@ FOR EACH ROW EXECUTE FUNCTION calculate_invoice_line_amounts();
 -- Correctly handles INSERT, UPDATE (including invoice_id reassignment), and DELETE
 CREATE OR REPLACE FUNCTION sync_invoice_totals()
 RETURNS TRIGGER
+SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
@@ -290,24 +292,28 @@ ALTER TABLE invoice_lines ENABLE ROW LEVEL SECURITY;
 -- ----------------------------------------------------------------------------
 
 -- Allow staff and admin to view all invoices
+DROP POLICY IF EXISTS "Allow staff and admin to view all invoices" ON invoices;
 CREATE POLICY "Allow staff and admin to view all invoices"
 ON invoices FOR SELECT
 TO authenticated
 USING (is_staff_or_admin());
 
 -- Allow customers to view their own invoices
+DROP POLICY IF EXISTS "Allow customers to view their own invoices" ON invoices;
 CREATE POLICY "Allow customers to view their own invoices"
 ON invoices FOR SELECT
 TO authenticated
 USING (customer_id = auth.uid());
 
 -- Allow staff and admin to insert invoices
+DROP POLICY IF EXISTS "Allow staff and admin to insert invoices" ON invoices;
 CREATE POLICY "Allow staff and admin to insert invoices"
 ON invoices FOR INSERT
 TO authenticated
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to create draft invoices for themselves
+DROP POLICY IF EXISTS "Allow customers to create draft invoices" ON invoices;
 CREATE POLICY "Allow customers to create draft invoices"
 ON invoices FOR INSERT
 TO authenticated
@@ -318,6 +324,7 @@ WITH CHECK (
 );
 
 -- Allow staff and admin to update invoices
+DROP POLICY IF EXISTS "Allow staff and admin to update invoices" ON invoices;
 CREATE POLICY "Allow staff and admin to update invoices"
 ON invoices FOR UPDATE
 TO authenticated
@@ -325,6 +332,7 @@ USING (is_staff_or_admin())
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to cancel their own draft invoices
+DROP POLICY IF EXISTS "Allow customers to update own draft invoices" ON invoices;
 CREATE POLICY "Allow customers to update own draft invoices"
 ON invoices FOR UPDATE
 TO authenticated
@@ -332,6 +340,7 @@ USING (customer_id = auth.uid() AND status = 'draft')
 WITH CHECK (customer_id = auth.uid() AND status IN ('draft', 'cancelled'));
 
 -- Allow admin to delete draft or cancelled invoices only
+DROP POLICY IF EXISTS "Allow admin to delete draft or cancelled invoices" ON invoices;
 CREATE POLICY "Allow admin to delete draft or cancelled invoices"
 ON invoices FOR DELETE
 TO authenticated
@@ -342,6 +351,7 @@ USING (is_admin() AND status IN ('draft', 'cancelled'));
 -- ----------------------------------------------------------------------------
 
 -- Allow callers to view lines of accessible invoices
+DROP POLICY IF EXISTS "Allow callers to view lines of accessible invoices" ON invoice_lines;
 CREATE POLICY "Allow callers to view lines of accessible invoices"
 ON invoice_lines FOR SELECT
 TO authenticated
@@ -353,6 +363,7 @@ USING (
 );
 
 -- Allow staff and admin to manage invoice lines
+DROP POLICY IF EXISTS "Allow staff and admin to manage invoice lines" ON invoice_lines;
 CREATE POLICY "Allow staff and admin to manage invoice lines"
 ON invoice_lines FOR ALL
 TO authenticated
@@ -360,6 +371,7 @@ USING (is_staff_or_admin())
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to insert lines on their own draft invoices
+DROP POLICY IF EXISTS "Allow customers to insert lines on own draft invoices" ON invoice_lines;
 CREATE POLICY "Allow customers to insert lines on own draft invoices"
 ON invoice_lines FOR INSERT
 TO authenticated

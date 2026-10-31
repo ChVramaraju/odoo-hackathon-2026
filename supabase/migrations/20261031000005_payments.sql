@@ -61,6 +61,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency_key ON payments (idem
 
 CREATE OR REPLACE FUNCTION apply_payment_to_invoice()
 RETURNS TRIGGER
+SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
@@ -175,6 +176,7 @@ FOR EACH ROW EXECUTE FUNCTION apply_payment_to_invoice();
 
 CREATE OR REPLACE FUNCTION record_payment_atomic(p_payment JSONB)
 RETURNS JSONB
+SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
@@ -386,24 +388,28 @@ $$ LANGUAGE plpgsql;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
 -- Allow staff and admin to view all payments
+DROP POLICY IF EXISTS "Allow staff and admin to view all payments" ON payments;
 CREATE POLICY "Allow staff and admin to view all payments"
 ON payments FOR SELECT
 TO authenticated
 USING (is_staff_or_admin());
 
 -- Allow customers to view their own payments
+DROP POLICY IF EXISTS "Allow customers to view their own payments" ON payments;
 CREATE POLICY "Allow customers to view their own payments"
 ON payments FOR SELECT
 TO authenticated
 USING (customer_id = auth.uid());
 
 -- Allow staff and admin to insert payments
+DROP POLICY IF EXISTS "Allow staff and admin to insert payments" ON payments;
 CREATE POLICY "Allow staff and admin to insert payments"
 ON payments FOR INSERT
 TO authenticated
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to record payments against their own confirmed or overdue invoices
+DROP POLICY IF EXISTS "Allow customers to pay own confirmed invoices" ON payments;
 CREATE POLICY "Allow customers to pay own confirmed invoices"
 ON payments FOR INSERT
 TO authenticated
@@ -418,6 +424,7 @@ WITH CHECK (
 );
 
 -- Allow staff and admin to update payments (e.g. reconcile/refund)
+DROP POLICY IF EXISTS "Allow staff and admin to update payments" ON payments;
 CREATE POLICY "Allow staff and admin to update payments"
 ON payments FOR UPDATE
 TO authenticated
@@ -425,6 +432,7 @@ USING (is_staff_or_admin())
 WITH CHECK (is_staff_or_admin());
 
 -- Allow admin to delete payments
+DROP POLICY IF EXISTS "Allow admin to delete payments" ON payments;
 CREATE POLICY "Allow admin to delete payments"
 ON payments FOR DELETE
 TO authenticated

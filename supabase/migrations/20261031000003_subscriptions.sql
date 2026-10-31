@@ -61,6 +61,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- Subscriptions status timestamp automation trigger
 CREATE OR REPLACE FUNCTION handle_subscription_status_transition()
 RETURNS TRIGGER
+SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
@@ -178,6 +179,7 @@ FOR EACH ROW EXECUTE FUNCTION calculate_subscription_line_amounts();
 -- Correctly handles INSERT, UPDATE (including subscription_id reassignment), and DELETE
 CREATE OR REPLACE FUNCTION sync_subscription_totals()
 RETURNS TRIGGER
+SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
@@ -265,24 +267,28 @@ ALTER TABLE subscription_lines ENABLE ROW LEVEL SECURITY;
 -- ----------------------------------------------------------------------------
 
 -- Allow staff and admin to view all subscriptions
+DROP POLICY IF EXISTS "Allow staff and admin to view all subscriptions" ON subscriptions;
 CREATE POLICY "Allow staff and admin to view all subscriptions"
 ON subscriptions FOR SELECT
 TO authenticated
 USING (is_staff_or_admin());
 
 -- Allow customers to view their own subscriptions
+DROP POLICY IF EXISTS "Allow customers to view their own subscriptions" ON subscriptions;
 CREATE POLICY "Allow customers to view their own subscriptions"
 ON subscriptions FOR SELECT
 TO authenticated
 USING (customer_id = auth.uid());
 
 -- Allow staff and admin to insert subscriptions
+DROP POLICY IF EXISTS "Allow staff and admin to insert subscriptions" ON subscriptions;
 CREATE POLICY "Allow staff and admin to insert subscriptions"
 ON subscriptions FOR INSERT
 TO authenticated
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to create subscriptions for themselves
+DROP POLICY IF EXISTS "Allow customers to create their own subscriptions" ON subscriptions;
 CREATE POLICY "Allow customers to create their own subscriptions"
 ON subscriptions FOR INSERT
 TO authenticated
@@ -292,6 +298,7 @@ WITH CHECK (
 );
 
 -- Allow staff and admin to update subscriptions
+DROP POLICY IF EXISTS "Allow staff and admin to update subscriptions" ON subscriptions;
 CREATE POLICY "Allow staff and admin to update subscriptions"
 ON subscriptions FOR UPDATE
 TO authenticated
@@ -299,6 +306,7 @@ USING (is_staff_or_admin())
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to update limited fields on their own subscriptions (e.g. pause/notes)
+DROP POLICY IF EXISTS "Allow customers to update their own subscriptions" ON subscriptions;
 CREATE POLICY "Allow customers to update their own subscriptions"
 ON subscriptions FOR UPDATE
 TO authenticated
@@ -306,6 +314,7 @@ USING (customer_id = auth.uid())
 WITH CHECK (customer_id = auth.uid());
 
 -- Allow admin to delete draft or cancelled subscriptions only
+DROP POLICY IF EXISTS "Allow admin to delete draft or cancelled subscriptions" ON subscriptions;
 CREATE POLICY "Allow admin to delete draft or cancelled subscriptions"
 ON subscriptions FOR DELETE
 TO authenticated
@@ -316,6 +325,7 @@ USING (is_admin() AND status IN ('draft', 'cancelled'));
 -- ----------------------------------------------------------------------------
 
 -- Allow callers to view lines of accessible subscriptions
+DROP POLICY IF EXISTS "Allow callers to view lines of accessible subscriptions" ON subscription_lines;
 CREATE POLICY "Allow callers to view lines of accessible subscriptions"
 ON subscription_lines FOR SELECT
 TO authenticated
@@ -327,6 +337,7 @@ USING (
 );
 
 -- Allow staff and admin to manage subscription lines
+DROP POLICY IF EXISTS "Allow staff and admin to manage subscription lines" ON subscription_lines;
 CREATE POLICY "Allow staff and admin to manage subscription lines"
 ON subscription_lines FOR ALL
 TO authenticated
@@ -334,6 +345,7 @@ USING (is_staff_or_admin())
 WITH CHECK (is_staff_or_admin());
 
 -- Allow customers to insert lines on their own newly created subscriptions
+DROP POLICY IF EXISTS "Allow customers to insert lines on own subscriptions" ON subscription_lines;
 CREATE POLICY "Allow customers to insert lines on own subscriptions"
 ON subscription_lines FOR INSERT
 TO authenticated
