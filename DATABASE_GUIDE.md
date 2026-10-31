@@ -347,38 +347,53 @@ Stores itemized product/plan lines with historical pricing, discount, and tax sn
 ### 11. `payments`
 Stores recorded financial payment transactions applied to customer invoices with idempotency and balance enforcement.
 
-| Database Column | Data Type | Nullable | Default | Constraints & Rules | Description / Mapping |
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Backend Mapping (Pydantic / FastAPI) |
 |---|---|---|---|---|---|
-| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | Payment transaction UUID |
-| `payment_number` | `VARCHAR(64)` | No | `generate_payment_number()` | `UNIQUE`, `NOT NULL`, e.g. `PAY-YYYYMM-XXXXXX` | Human-readable payment reference |
-| `invoice_id` | `UUID` | No | — | `REFERENCES invoices(id) ON DELETE RESTRICT` | Target invoice reference |
-| `customer_id` | `UUID` | No | — | `REFERENCES auth.users(id) ON DELETE RESTRICT` | Payer customer reference |
-| `amount` | `NUMERIC(12, 2)` | No | — | `CHECK (amount > 0)` | Payment amount in designated currency |
-| `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | 3-letter currency code |
-| `payment_method` | `VARCHAR(50)` | No | — | `CHECK (payment_method IN ('credit_card', 'debit_card', 'bank_transfer', 'upi', 'cash', 'manual'))` | Payment method channel |
-| `status` | `VARCHAR(20)` | No | `'completed'` | `CHECK (status IN ('pending', 'completed', 'failed', 'refunded'))` | Transaction status lifecycle |
-| `payment_date` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | Effective transaction timestamp |
-| `transaction_reference` | `VARCHAR(100)` | Yes | `NULL` | `UNIQUE` when non-null | External payment gateway transaction/charge ID |
-| `notes` | `TEXT` | Yes | `NULL` | — | Operational / reconciliation notes |
-| `created_by` | `UUID` | Yes | `NULL` | `REFERENCES auth.users(id) ON DELETE SET NULL` | Operator or user recording payment |
-| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | Creation timestamp |
-| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | Last modification timestamp |
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | `id: UUID` |
+| `payment_number` | `VARCHAR(64)` | No | `generate_payment_number()` | `UNIQUE`, `NOT NULL`, e.g. `PAY-YYYYMM-XXXXXX` | `payment_number: str` |
+| `invoice_id` | `UUID` | No | — | `REFERENCES invoices(id) ON DELETE RESTRICT` | `invoice_id: UUID` |
+| `customer_id` | `UUID` | No | — | `REFERENCES auth.users(id) ON DELETE RESTRICT` | `customer_id: UUID` |
+| `amount` | `NUMERIC(12, 2)` | No | — | `CHECK (amount > 0)` | `amount: Decimal` |
+| `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | `currency: str = "INR"` |
+| `payment_method` | `VARCHAR(50)` | No | `'manual'` | `CHECK (payment_method IN ('card', 'bank_transfer', 'upi', 'net_banking', 'manual', 'cash'))` | `payment_method: PaymentMethod` |
+| `payment_status` | `VARCHAR(20)` | No | `'completed'` | `CHECK (payment_status IN ('completed', 'pending', 'failed', 'refunded'))` | `payment_status: PaymentStatus` |
+| `payment_date` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `payment_date: datetime` |
+| `transaction_reference` | `VARCHAR(100)` | Yes | `NULL` | External transaction ID, UTR, or gateway charge reference | `transaction_reference: Optional[str]` |
+| `idempotency_key` | `VARCHAR(100)` | Yes | `NULL` | `UNIQUE` client key for duplicate submission prevention | `idempotency_key: Optional[str]` |
+| `notes` | `TEXT` | Yes | `NULL` | — | `notes: Optional[str]` |
+| `recorded_by` | `UUID` | Yes | `NULL` | `REFERENCES auth.users(id) ON DELETE SET NULL` | `recorded_by: Optional[UUID]` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | `updated_at: datetime` |
 
 *Indexes & Concurrency Protection:*
 - `idx_payments_invoice_id ON payments (invoice_id)`
 - `idx_payments_customer_id ON payments (customer_id)`
-- `idx_payments_status ON payments (status)`
+- `idx_payments_status ON payments (payment_status)`
 - `idx_payments_payment_date ON payments (payment_date DESC)`
 - `idx_payments_transaction_ref ON payments (transaction_reference) WHERE transaction_reference IS NOT NULL`
+- `idx_payments_idempotency_key UNIQUE (idempotency_key) WHERE idempotency_key IS NOT NULL`
 - `trg_payments_updated_at BEFORE UPDATE` calling `update_updated_at_column()`
 - `trg_payments_apply_to_invoice AFTER INSERT OR UPDATE OR DELETE`:
   - Acquires `FOR UPDATE` lock on the parent invoice to prevent concurrent overpayments.
-  - Aggregates completed payments: `COALESCE(SUM(amount), 0.00) WHERE invoice_id = ... AND status = 'completed'`.
+  - Aggregates completed payments: `COALESCE(SUM(amount), 0.00) WHERE invoice_id = ... AND payment_status = 'completed'`.
   - Enforces overpayment constraint: raises `check_violation` if total completed payments exceed invoice total amount.
   - Automatically synchronizes `invoices.amount_paid` and `invoices.balance = greatest(0.00, total_amount - amount_paid)`.
   - Transitions `invoices.status = 'paid'` and sets `paid_at = now()` when balance reaches 0.00.
   - Safely rolls back status to `confirmed` and resets `paid_at` if a payment is refunded or voided.
-- Security Invariant: No raw credit card numbers, CVVs, expiration dates, or bank account credentials are stored in the database.
+- Security Invariant: Zero raw card numbers, CVVs, expiration dates, or bank account credentials are stored in the database.
+
+---
+
+### Atomic Payment Settlement RPC (`record_payment_atomic`)
+To guarantee that payment recording and invoice balance decrement occur atomically under concurrent access:
+```sql
+record_payment_atomic(p_payment JSONB) RETURNS JSONB
+```
+- Executes inside a single transaction with `SELECT ... FOR UPDATE` row-level lock on `invoices`.
+- Checks `idempotency_key`: if previously recorded with identical parameters, returns existing payment record safely; if parameters conflict, raises `unique_violation` (409 Conflict).
+- Validates invoice state (cannot pay cancelled or already paid invoice), currency match, and overpayment guard (`amount <= balance`).
+- Inserts row into `payments` and synchronizes parent invoice totals and status.
+- Granted `EXECUTE` to `authenticated` and `service_role`.
 
 ---
 

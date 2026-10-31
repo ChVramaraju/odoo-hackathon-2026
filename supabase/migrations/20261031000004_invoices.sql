@@ -382,3 +382,4 @@ GRANT USAGE, SELECT ON SEQUENCE invoice_number_seq TO authenticated, service_rol
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON invoices TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON invoice_lines TO authenticated;
+
