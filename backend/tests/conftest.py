@@ -24,6 +24,10 @@ from app.repositories.invoice_repository import (
     InMemoryInvoiceRepository,
     get_invoice_repository,
 )
+from app.repositories.payment_repository import (
+    InMemoryPaymentRepository,
+    get_payment_repository,
+)
 from app.repositories.plan_repository import InMemoryPlanRepository, get_plan_repository
 from app.repositories.product_repository import InMemoryProductRepository, get_product_repository
 from app.repositories.quotation_repository import InMemoryQuotationRepository, get_quotation_repository
@@ -69,6 +73,12 @@ def invoice_repo() -> InMemoryInvoiceRepository:
 
 
 @pytest.fixture
+def payment_repo() -> InMemoryPaymentRepository:
+    """Isolated payment repository per test."""
+    return InMemoryPaymentRepository()
+
+
+@pytest.fixture
 def admin_user() -> User:
     return User(
         id=uuid4(),
@@ -105,6 +115,7 @@ async def client(
     quotation_repo: InMemoryQuotationRepository,
     subscription_repo: InMemorySubscriptionRepository,
     invoice_repo: InMemoryInvoiceRepository,
+    payment_repo: InMemoryPaymentRepository,
 ) -> AsyncClient:
     """Anonymous / unauthenticated client."""
     app = create_app()
@@ -113,6 +124,7 @@ async def client(
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
     app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_invoice_repository] = lambda: invoice_repo
+    app.dependency_overrides[get_payment_repository] = lambda: payment_repo
     app.dependency_overrides[get_current_user_optional] = lambda: None
     app.dependency_overrides[get_optional_current_user] = lambda: None
 
@@ -129,6 +141,7 @@ async def admin_client(
     quotation_repo: InMemoryQuotationRepository,
     subscription_repo: InMemorySubscriptionRepository,
     invoice_repo: InMemoryInvoiceRepository,
+    payment_repo: InMemoryPaymentRepository,
 ) -> AsyncClient:
     """Client authenticated with 'admin' role."""
     app = create_app()
@@ -137,6 +150,7 @@ async def admin_client(
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
     app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_invoice_repository] = lambda: invoice_repo
+    app.dependency_overrides[get_payment_repository] = lambda: payment_repo
     app.dependency_overrides[get_current_user] = lambda: admin_user
     app.dependency_overrides[get_current_user_optional] = lambda: admin_user
     app.dependency_overrides[get_optional_current_user] = lambda: admin_user
@@ -154,6 +168,7 @@ async def staff_client(
     quotation_repo: InMemoryQuotationRepository,
     subscription_repo: InMemorySubscriptionRepository,
     invoice_repo: InMemoryInvoiceRepository,
+    payment_repo: InMemoryPaymentRepository,
 ) -> AsyncClient:
     """Client authenticated with 'staff' role."""
     app = create_app()
@@ -162,6 +177,7 @@ async def staff_client(
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
     app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_invoice_repository] = lambda: invoice_repo
+    app.dependency_overrides[get_payment_repository] = lambda: payment_repo
     app.dependency_overrides[get_current_user] = lambda: staff_user
     app.dependency_overrides[get_current_user_optional] = lambda: staff_user
     app.dependency_overrides[get_optional_current_user] = lambda: staff_user
@@ -179,6 +195,7 @@ async def customer_client(
     quotation_repo: InMemoryQuotationRepository,
     subscription_repo: InMemorySubscriptionRepository,
     invoice_repo: InMemoryInvoiceRepository,
+    payment_repo: InMemoryPaymentRepository,
 ) -> AsyncClient:
     """Client authenticated with 'customer' role."""
     app = create_app()
@@ -187,6 +204,7 @@ async def customer_client(
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
     app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_invoice_repository] = lambda: invoice_repo
+    app.dependency_overrides[get_payment_repository] = lambda: payment_repo
     app.dependency_overrides[get_current_user] = lambda: customer_user
     app.dependency_overrides[get_current_user_optional] = lambda: customer_user
     app.dependency_overrides[get_optional_current_user] = lambda: customer_user

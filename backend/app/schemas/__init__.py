@@ -10,6 +10,13 @@ from app.schemas.invoice import (
     InvoiceResponse,
     InvoiceStatus,
 )
+from app.schemas.payment import (
+    PaymentCreate,
+    PaymentListResponse,
+    PaymentMethod,
+    PaymentResponse,
+    PaymentStatus,
+)
 from app.schemas.plan import (
     BillingFrequency,
     EndOfTermBehavior,
@@ -84,4 +91,9 @@ __all__ = [
     "InvoiceListResponse",
     "InvoiceStatus",
     "InvoiceLineType",
+    "PaymentCreate",
+    "PaymentResponse",
+    "PaymentListResponse",
+    "PaymentMethod",
+    "PaymentStatus",
 ]

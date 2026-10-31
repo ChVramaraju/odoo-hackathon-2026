@@ -396,6 +396,50 @@ Stores itemized product/plan lines with historical pricing, discount, and tax sn
 
 ---
 
+## Payments & Settlements Schema Specification (Migration `20261031000005_payments.sql`)
+
+### 11. `payments`
+Stores recorded payments, transaction methods, references, and audit links.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Backend Mapping (Pydantic / FastAPI) |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | `id: UUID` |
+| `payment_number` | `VARCHAR(64)` | No | — | `UNIQUE`, `NOT NULL`, e.g. `PAY-YYYYMM-XXXXXX` | `payment_number: str` |
+| `invoice_id` | `UUID` | No | — | `REFERENCES invoices(id) ON DELETE RESTRICT` | `invoice_id: UUID` |
+| `customer_id` | `UUID` | No | — | References auth customer / user | `customer_id: UUID` |
+| `amount` | `NUMERIC(12, 2)` | No | — | `CHECK (amount > 0)` | `amount: Decimal` |
+| `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | `currency: str = "INR"` |
+| `payment_method` | `VARCHAR(50)` | No | `'manual'` | `CHECK (payment_method IN ('card', 'bank_transfer', 'upi', 'net_banking', 'manual', 'cash'))` | `payment_method: PaymentMethod` |
+| `payment_status` | `VARCHAR(20)` | No | `'completed'` | `CHECK (payment_status IN ('completed', 'pending', 'failed', 'refunded'))` | `payment_status: PaymentStatus` |
+| `payment_date` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `payment_date: datetime` |
+| `transaction_reference` | `VARCHAR(100)` | Yes | `NULL` | External transaction ID, UTR or reference | `transaction_reference: Optional[str]` |
+| `idempotency_key` | `VARCHAR(100)` | Yes | `NULL` | `UNIQUE` client key for duplicate prevention | `idempotency_key: Optional[str]` |
+| `notes` | `TEXT` | Yes | `NULL` | Operational notes | `notes: Optional[str]` |
+| `recorded_by` | `UUID` | Yes | `NULL` | User who recorded the payment | `recorded_by: Optional[UUID]` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | `updated_at: datetime` |
+
+*Indexes:*
+- `idx_payments_invoice_id ON payments(invoice_id)`
+- `idx_payments_customer_id ON payments(customer_id)`
+- `idx_payments_payment_date ON payments(payment_date)`
+- `idx_payments_idempotency_key UNIQUE (idempotency_key) WHERE idempotency_key IS NOT NULL`
+
+---
+
+### Atomic Settlement RPC (`record_payment_atomic`)
+To guarantee that payment recording and invoice balance decrement occur atomically under concurrent access:
+```sql
+record_payment_atomic(p_payment JSONB) RETURNS JSONB
+```
+- Executes inside a single transaction with `SELECT ... FOR UPDATE` row-level lock on `invoices`.
+- Validates that `amount <= balance`, applies `amount_paid = amount_paid + amount`, `balance = total_amount - amount_paid`.
+- If `balance = 0.00`, transitions `invoices.status = 'paid'` and sets `paid_at = now()`.
+- Inserts row into `payments`.
+- Returns both the created payment and updated invoice state.
+
+---
+
 ## Future data model targets (Upcoming phases)
 
 ### Identity and access

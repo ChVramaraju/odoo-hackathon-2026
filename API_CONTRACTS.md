@@ -419,3 +419,49 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 #### `POST /api/v1/invoices/{id}/cancel`
 - **Access:** Authenticated (Customer / Staff / Admin)
 - **Status:** `200 OK` (Transitions to `cancelled`, rejected if payments recorded)
+
+
+---
+
+### 6. Payments & Settlements
+
+#### Core Rules & Invariants:
+- **Statuses:** `completed`, `pending`, `failed`, `refunded`.
+- **Payment Methods:** `card`, `bank_transfer`, `upi`, `net_banking`, `manual`, `cash`.
+- **Settlement Invariants:**
+  - Payment amount must be positive (`> 0.00`).
+  - Cannot exceed outstanding invoice balance (`OVERPAYMENT_NOT_ALLOWED`).
+  - Invoice balance decreases by exact payment amount: `new_balance = balance - amount`.
+  - When `new_balance == 0.00`, invoice status transitions to `PAID` with `paid_at` recorded.
+  - Payments cannot be recorded against cancelled invoices.
+  - Payment currency must match invoice currency.
+- **Idempotency (`idempotency_key`):**
+  - Unique per client payment attempt.
+  - Resending with identical key and parameters returns existing payment without double-crediting.
+  - Re-submitting with different parameters returns `409 Conflict`.
+- **Customer Data Isolation:** Customers can only view and pay their own invoices.
+
+#### `POST /api/v1/payments`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "invoice_id": "00000000-0000-0000-0000-000000000000",
+    "amount": "2500.00",
+    "currency": "INR",
+    "payment_method": "upi",
+    "transaction_reference": "UPI-UTR-998877",
+    "idempotency_key": "client-pay-nonce-12345",
+    "notes": "First installment"
+  }
+  ```
+
+#### `GET /api/v1/payments`
+- **Access:** Authenticated (Role-scoped: customers see only their own)
+- **Query Params:** `customer_id`, `invoice_id`, `status`, `page`, `page_size`
+- **Status:** `200 OK`
+
+#### `GET /api/v1/payments/{payment_id}`
+- **Access:** Authenticated (Customer isolation enforced)
+- **Status:** `200 OK` (or `404 Not Found`)

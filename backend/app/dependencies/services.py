@@ -7,11 +7,13 @@ Provides dependency injection providers for domain services.
 from fastapi import Depends
 
 from app.repositories.invoice_repository import InvoiceRepositoryProtocol, get_invoice_repository
+from app.repositories.payment_repository import PaymentRepositoryProtocol, get_payment_repository
 from app.repositories.plan_repository import PlanRepositoryProtocol, get_plan_repository
 from app.repositories.product_repository import ProductRepositoryProtocol, get_product_repository
 from app.repositories.quotation_repository import QuotationRepositoryProtocol, get_quotation_repository
 from app.repositories.subscription_repository import SubscriptionRepositoryProtocol, get_subscription_repository
 from app.services.invoice_service import InvoiceService
+from app.services.payment_service import PaymentService
 from app.services.plan_service import PlanService
 from app.services.product_service import ProductService
 from app.services.quotation_service import QuotationService
@@ -63,4 +65,14 @@ def get_invoice_service(
         product_repo=product_repo,
         plan_repo=plan_repo,
         subscription_repo=subscription_repo,
+    )
+
+
+def get_payment_service(
+    repo: PaymentRepositoryProtocol = Depends(get_payment_repository),
+    invoice_repo: InvoiceRepositoryProtocol = Depends(get_invoice_repository),
+) -> PaymentService:
+    return PaymentService(
+        repo=repo,
+        invoice_repo=invoice_repo,
     )
