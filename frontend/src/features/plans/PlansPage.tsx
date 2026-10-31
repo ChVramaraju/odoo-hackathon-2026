@@ -7,6 +7,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
 import { useAuth } from '../../context/AuthContext';
 import { BillingFrequency } from '../../types/plan';
+import { apiClient } from '../../api/client';
 
 export const PlansPage: React.FC = () => {
   const { role } = useAuth();
@@ -22,8 +23,8 @@ export const PlansPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Mock-mode indicator — shown when backend is unreachable */}
-      {!isLoading && !error && data && (
+      {/* Mock-mode indicator — shown when mock mode is active */}
+      {apiClient.isMockMode() && !isLoading && !error && data && (
         <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-lg border border-emerald-800/40 bg-emerald-950/40 text-emerald-400 text-xs">
           <Database className="w-3.5 h-3.5 flex-shrink-0" />
           <span>

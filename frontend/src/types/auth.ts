@@ -5,6 +5,8 @@ export interface User {
   email: string;
   role: UserRole;
   name?: string;
+  company?: string;
+  customerId?: string;
   is_active?: boolean;
 }
 
@@ -12,5 +14,10 @@ export interface AuthSession {
   user: User | null;
   accessToken: string | null;
   isLoading: boolean;
+}
+
+export interface LoginResult {
+  success: boolean;
+  error?: string;
 }
 

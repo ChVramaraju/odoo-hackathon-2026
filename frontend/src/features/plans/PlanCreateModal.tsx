@@ -2,11 +2,13 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react';
 import { useCreatePlan } from './usePlans';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
 import { BillingFrequency, EndOfTermBehavior } from '../../types/plan';
+import { ApiError } from '../../api/client';
 
 const planSchema = z.object({
   name: z.string().min(2, 'Plan name must be at least 2 characters'),
@@ -77,8 +79,8 @@ export const PlanCreateModal: React.FC<PlanCreateModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg bg-forest-900 border border-surface-border rounded-2xl shadow-2xl overflow-hidden">
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="lg" ariaLabel="Define Subscription Plan">
+      <div>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border/60 bg-forest-950/60">
           <div>
@@ -86,6 +88,7 @@ export const PlanCreateModal: React.FC<PlanCreateModalProps> = ({ isOpen, onClos
             <p className="text-xs text-surface-textMuted">Configure recurring intervals, pricing tier, and renewal behavior</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-surface-textMuted hover:text-surface-text hover:bg-forest-800 transition-colors"
           >
@@ -183,6 +186,17 @@ export const PlanCreateModal: React.FC<PlanCreateModalProps> = ({ isOpen, onClos
             />
           </div>
 
+          {createPlanMutation.isError && (
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-900/60 text-xs text-red-300 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>
+                {(createPlanMutation.error as ApiError)?.message ||
+                  (createPlanMutation.error as Error)?.message ||
+                  'Failed to create plan on backend. Verify admin permissions and schema terms.'}
+              </span>
+            </div>
+          )}
+
           {/* Form Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-surface-border/60">
             <Button type="button" variant="ghost" onClick={onClose}>
@@ -194,7 +208,7 @@ export const PlanCreateModal: React.FC<PlanCreateModalProps> = ({ isOpen, onClos
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };
 

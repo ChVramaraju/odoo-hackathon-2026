@@ -1,13 +1,16 @@
 /**
- * HexCanvas — Brightloop Architectural 3D Hexagonal Terrain
+ * HexCanvas — Brightloop Cinematic Architectural 3D Hexagonal Terrain
  *
- * Faithfully reproduces the Bipsync reference design:
- *  - Interconnected, tightly packed hexagonal slabs with visible depth & vertical column sides.
- *  - Triple concentric stepped bevels (outer chamfer lip, middle ridge, sunken inner plate).
- *  - Physically based satin forest and metallic emerald surfaces with soft specular sheen.
- *  - Balanced diffuse luminance & specular highlights matching the Bipsync tactile metallic plates.
- *  - Glowing emerald & mint chamfer wireframe contours.
- *  - Eye-level architectural perspective with rolling terraces, mouse parallax, and WebGL fallback.
+ * Final Lighting & Material Refinement:
+ *  - Preserves the approved large hexagonal geometry (radius 4.6, height 3.2, 7x9 slabs)
+ *    and exact low-angle cinematic camera perspective.
+ *  - Enriched tile face illumination: lower-center and lower-right tile faces are visibly
+ *    illuminated with broad, soft teal and emerald satin sheen.
+ *  - Gradual cinematic transition: dark forest green in the distant background (upper z < -3)
+ *    to rich, lustrous teal and emerald in the foreground (lower z > 0).
+ *  - Subtle light pools focused on center and right slabs; deep natural cast shadows between slabs.
+ *  - Softer optical edge bevels (opacity 0.24–0.42) eliminating wireframe appearance.
+ *  - Preserves mouse parallax, slow undulation, reduced-motion, and WebGL fallback.
  */
 
 import React, { useRef, useMemo, useEffect, useState } from 'react';
@@ -29,18 +32,18 @@ const TerrainScene: React.FC<TerrainSceneProps> = ({ reducedMotion }) => {
   const { camera } = useThree();
   const hexGroupRef = useRef<THREE.Group>(null);
   const emeraldLightRef = useRef<THREE.PointLight>(null);
-  const mintLightRef = useRef<THREE.PointLight>(null);
+  const tealLightRef = useRef<THREE.PointLight>(null);
   const underGlowRef = useRef<THREE.PointLight>(null);
 
   const mouseRef = useRef({ x: 0, y: 0 });
-  const targetRotRef = useRef({ x: 0.22, y: -0.14 });
+  const targetRotRef = useRef({ x: 0.26, y: -0.08 });
 
-  // Camera orientation gazing across the terrain
+  // Low, cinematic camera looking across the surface
   useEffect(() => {
-    camera.lookAt(-0.5, 0.8, 0);
+    camera.lookAt(0.0, 1.0, -3.0);
   }, [camera]);
 
-  // Track mouse parallax
+  // Subtle mouse-responsive parallax
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       mouseRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -55,86 +58,118 @@ const TerrainScene: React.FC<TerrainSceneProps> = ({ reducedMotion }) => {
     const group = new THREE.Group();
     const tileList: TileData[] = [];
 
-    const hexRadius = 1.85;
-    const baseHeight = 1.8;
-    const rows = 14;
-    const cols = 20;
+    // Approved large architectural slab dimensions
+    const hexRadius = 4.6;
+    const baseHeight = 3.2;
+    const rows = 7;
+    const cols = 9;
 
-    const xSpacing = hexRadius * Math.sqrt(3);
-    const zSpacing = hexRadius * 1.5;
+    const xSpacing = hexRadius * Math.sqrt(3) * 1.012;
+    const zSpacing = hexRadius * 1.5 * 1.012;
 
-    // Shared geometries with multi-layer concentric stepped beveling
-    const outerCylinderGeom = new THREE.CylinderGeometry(hexRadius * 0.96, hexRadius, baseHeight, 6);
-    const midStepGeom = new THREE.CylinderGeometry(hexRadius * 0.88, hexRadius * 0.88, baseHeight * 1.02, 6);
-    const innerRecessGeom = new THREE.CylinderGeometry(hexRadius * 0.78, hexRadius * 0.78, baseHeight * 1.04, 6);
+    // Slabs with multi-layer concentric stepped beveling & rounded chamfers
+    const outerCylinderGeom = new THREE.CylinderGeometry(
+      hexRadius * 0.965,
+      hexRadius,
+      baseHeight,
+      6
+    );
+    const midStepGeom = new THREE.CylinderGeometry(
+      hexRadius * 0.86,
+      hexRadius * 0.86,
+      baseHeight * 1.025,
+      6
+    );
+    const innerRecessGeom = new THREE.CylinderGeometry(
+      hexRadius * 0.76,
+      hexRadius * 0.76,
+      baseHeight * 1.05,
+      6
+    );
 
-    const outerEdgesGeom = new THREE.EdgesGeometry(outerCylinderGeom, 15);
-    const midEdgesGeom = new THREE.EdgesGeometry(midStepGeom, 15);
-    const innerEdgesGeom = new THREE.EdgesGeometry(innerRecessGeom, 15);
+    // Clean edge bevel outlines (threshold 20° extracts clean perimeter contours)
+    const outerEdgesGeom = new THREE.EdgesGeometry(outerCylinderGeom, 20);
+    const midEdgesGeom = new THREE.EdgesGeometry(midStepGeom, 20);
+    const innerEdgesGeom = new THREE.EdgesGeometry(innerRecessGeom, 20);
 
-    // Physically based materials: Color-tuned to match Bipsync reference's tactile satin metallic plates
-    const matSatinForest = new THREE.MeshStandardMaterial({
-      color: 0x1a4633,
-      roughness: 0.30,
-      metalness: 0.45,
-      emissive: new THREE.Color(0x041f15),
-      emissiveIntensity: 0.30,
-      flatShading: true,
-    });
-
-    const matSlateEmerald = new THREE.MeshStandardMaterial({
-      color: 0x225840,
-      roughness: 0.25,
-      metalness: 0.50,
-      emissive: new THREE.Color(0x072d1e),
-      emissiveIntensity: 0.40,
-      flatShading: true,
-    });
-
-    const matDeepObsidian = new THREE.MeshStandardMaterial({
-      color: 0x0c2419,
-      roughness: 0.40,
-      metalness: 0.40,
+    // Physically based satin metallic materials with depth graduation
+    // 1. Distant background tiles (deep forest & obsidian shadow)
+    const matDistantForest = new THREE.MeshPhysicalMaterial({
+      color: 0x0a2217,
+      roughness: 0.38,
+      metalness: 0.44,
+      clearcoat: 0.50,
+      clearcoatRoughness: 0.25,
       emissive: new THREE.Color(0x02110a),
       emissiveIntensity: 0.20,
       flatShading: true,
     });
 
-    const matMintCrest = new THREE.MeshStandardMaterial({
-      color: 0x2e6f52,
+    // 2. Midground tiles (slate forest)
+    const matMidgroundForest = new THREE.MeshPhysicalMaterial({
+      color: 0x164633,
+      roughness: 0.26,
+      metalness: 0.52,
+      clearcoat: 0.80,
+      clearcoatRoughness: 0.18,
+      emissive: new THREE.Color(0x052417),
+      emissiveIntensity: 0.30,
+      flatShading: true,
+    });
+
+    // 3. Foreground tiles (vibrant satin teal-emerald with broad surface sheen)
+    const matForegroundSatin = new THREE.MeshPhysicalMaterial({
+      color: 0x22644d,
       roughness: 0.20,
-      metalness: 0.55,
-      emissive: new THREE.Color(0x0c3d28),
-      emissiveIntensity: 0.50,
+      metalness: 0.58,
+      clearcoat: 0.95,
+      clearcoatRoughness: 0.12,
+      emissive: new THREE.Color(0x093a2a),
+      emissiveIntensity: 0.38,
       flatShading: true,
     });
 
-    const matInnerPlate = new THREE.MeshStandardMaterial({
-      color: 0x1e4f3a,
-      roughness: 0.28,
-      metalness: 0.48,
-      emissive: new THREE.Color(0x06281b),
-      emissiveIntensity: 0.35,
+    // 4. Lower-right & elevated crest tiles (lustrous teal-mint metallic)
+    const matForegroundTealCrest = new THREE.MeshPhysicalMaterial({
+      color: 0x2a795e,
+      roughness: 0.16,
+      metalness: 0.64,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.08,
+      emissive: new THREE.Color(0x0e4a36),
+      emissiveIntensity: 0.46,
       flatShading: true,
     });
 
-    // Glowing edge bevel lines in vivid emerald & mint
+    // 5. Sunken inner plate (satin metallic pool)
+    const matInnerPlate = new THREE.MeshPhysicalMaterial({
+      color: 0x1b4f3a,
+      roughness: 0.22,
+      metalness: 0.58,
+      clearcoat: 0.88,
+      clearcoatRoughness: 0.14,
+      emissive: new THREE.Color(0x062a1d),
+      emissiveIntensity: 0.32,
+      flatShading: true,
+    });
+
+    // Soft, non-wireframe edge chamfers
     const edgeDark = new THREE.LineBasicMaterial({
-      color: 0x236846,
+      color: 0x1c563b,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.24,
     });
 
     const edgeEmerald = new THREE.LineBasicMaterial({
       color: 0x00c982,
       transparent: true,
-      opacity: 0.90,
+      opacity: 0.36,
     });
 
-    const edgeMint = new THREE.LineBasicMaterial({
-      color: 0x8cf5c2,
+    const edgeTealMint = new THREE.LineBasicMaterial({
+      color: 0x5eead4,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.42,
     });
 
     for (let r = -Math.floor(rows / 2); r <= Math.floor(rows / 2); r++) {
@@ -143,28 +178,49 @@ const TerrainScene: React.FC<TerrainSceneProps> = ({ reducedMotion }) => {
         const xPos = c * xSpacing + xOffset;
         const zPos = r * zSpacing;
 
-        // Smooth coordinated undulating terrain (flowing terraces)
+        // Smooth rolling terrain with stepped terrace elevations
         const dist = Math.sqrt(xPos * xPos * 0.65 + zPos * zPos);
-        const wave = Math.sin(xPos * 0.18 + zPos * 0.14) * 1.5 + Math.cos(dist * 0.20) * 1.0;
-        const steppedLevel = Math.round(wave * 1.8) * 0.45;
-        const heightScale = Math.max(0.55, 1.0 + steppedLevel * 0.50);
+        const wave = Math.sin(xPos * 0.14 + zPos * 0.10) * 1.6 + Math.cos(dist * 0.14) * 1.1;
+        const steppedLevel = Math.round(wave * 1.6) * 0.65;
+        const heightScale = Math.max(0.60, 1.0 + steppedLevel * 0.40);
 
-        // Architectural material assignment
-        const score = Math.sin(c * 0.70 + 1.1) * Math.cos(r * 0.74);
-        let chosenMat = matSatinForest;
+        // Depth-based gradual transition from background shadow to foreground teal/emerald
+        // Positive zPos is foreground; negative zPos is distant background
+        const isForeground = zPos > -1.0;
+        const isCenterRight = xPos > -1.0;
+        const score = Math.sin(c * 0.65 + 1.1) * Math.cos(r * 0.70);
+
+        let chosenMat = matMidgroundForest;
         let chosenOuterEdge = edgeEmerald;
         let chosenInnerEdge = edgeDark;
 
-        if (steppedLevel > 0.50 && score > 0.22) {
-          chosenMat = matMintCrest;
-          chosenOuterEdge = edgeMint;
-          chosenInnerEdge = edgeEmerald;
-        } else if (steppedLevel > 0.08 || score > 0.12) {
-          chosenMat = matSlateEmerald;
+        if (zPos < -4.0) {
+          // Distant upper background
+          chosenMat = matDistantForest;
+          chosenOuterEdge = edgeDark;
+          chosenInnerEdge = edgeDark;
+        } else if (isForeground && isCenterRight) {
+          // Lower-center and lower-right: enriched teal and emerald satin sheen
+          if (steppedLevel > 0.40 || score > 0.15) {
+            chosenMat = matForegroundTealCrest;
+            chosenOuterEdge = edgeTealMint;
+            chosenInnerEdge = edgeEmerald;
+          } else {
+            chosenMat = matForegroundSatin;
+            chosenOuterEdge = edgeEmerald;
+            chosenInnerEdge = edgeDark;
+          }
+        } else if (isForeground) {
+          // Lower-left (beneath dark vignette)
+          chosenMat = matForegroundSatin;
           chosenOuterEdge = edgeEmerald;
-          chosenInnerEdge = edgeEmerald;
-        } else if (steppedLevel < -0.35) {
-          chosenMat = matDeepObsidian;
+          chosenInnerEdge = edgeDark;
+        } else if (steppedLevel > 0.40) {
+          chosenMat = matMidgroundForest;
+          chosenOuterEdge = edgeEmerald;
+          chosenInnerEdge = edgeDark;
+        } else {
+          chosenMat = matDistantForest;
           chosenOuterEdge = edgeDark;
           chosenInnerEdge = edgeDark;
         }
@@ -205,19 +261,19 @@ const TerrainScene: React.FC<TerrainSceneProps> = ({ reducedMotion }) => {
         tileList.push({
           container: tileContainer,
           baseY,
-          phase: dist * 0.22 + (xPos + zPos) * 0.08,
-          speed: 0.50 + Math.abs(Math.sin(c * 1.3 + r * 0.7)) * 0.24,
+          phase: dist * 0.18 + (xPos + zPos) * 0.06,
+          speed: 0.45 + Math.abs(Math.sin(c * 1.2 + r * 0.6)) * 0.20,
         });
 
         group.add(tileContainer);
       }
     }
 
-    // Architectural vantage point: sweeps across the hero banner with prominent foreground tiles
-    group.position.set(2.8, -1.8, 0.5);
-    group.rotation.x = 0.22;
-    group.rotation.y = -0.14;
-    group.rotation.z = -0.04;
+    // Approved group position and orientation
+    group.position.set(0.8, -4.0, -2.0);
+    group.rotation.x = 0.26;
+    group.rotation.y = -0.08;
+    group.rotation.z = -0.02;
 
     return { hexGroup: group, tiles: tileList };
   }, []);
@@ -230,89 +286,86 @@ const TerrainScene: React.FC<TerrainSceneProps> = ({ reducedMotion }) => {
     if (!reducedMotion) {
       // Smooth mouse parallax damping
       targetRotRef.current.y +=
-        (-0.14 + mouseRef.current.x * 1.5 * 0.04 - targetRotRef.current.y) * 0.04;
+        (-0.08 + mouseRef.current.x * 1.5 * 0.03 - targetRotRef.current.y) * 0.04;
       targetRotRef.current.x +=
-        (0.22 - mouseRef.current.y * 0.9 * 0.03 - targetRotRef.current.x) * 0.04;
+        (0.26 - mouseRef.current.y * 0.9 * 0.02 - targetRotRef.current.x) * 0.04;
 
       hexGroupRef.current.rotation.y =
-        targetRotRef.current.y + Math.sin(time * 0.12) * 0.012;
+        targetRotRef.current.y + Math.sin(time * 0.10) * 0.010;
       hexGroupRef.current.rotation.x =
-        targetRotRef.current.x + Math.cos(time * 0.10) * 0.008;
+        targetRotRef.current.x + Math.cos(time * 0.08) * 0.006;
 
       // Slow, fluid undulating pulse across tiles
       for (let i = 0; i < tiles.length; i++) {
         const t = tiles[i];
-        const offset = Math.sin(time * t.speed + t.phase) * 0.14;
+        const offset = Math.sin(time * t.speed + t.phase) * 0.16;
         t.container.position.y = t.baseY + offset;
       }
 
-      // Soft orbiting emerald and mint illumination
+      // Slowly moving light reflections across foreground
       if (emeraldLightRef.current) {
-        emeraldLightRef.current.position.x = Math.sin(time * 0.24) * 12;
-        emeraldLightRef.current.position.z = Math.cos(time * 0.24) * 8 + 2;
+        emeraldLightRef.current.position.x = 2.5 + Math.sin(time * 0.20) * 6;
+        emeraldLightRef.current.position.z = 6.5 + Math.cos(time * 0.20) * 4;
       }
-      if (mintLightRef.current) {
-        mintLightRef.current.position.x = Math.cos(time * 0.18) * 10 + 4;
-        mintLightRef.current.position.y = 8 + Math.sin(time * 0.26) * 2.0;
+      if (tealLightRef.current) {
+        tealLightRef.current.position.x = 8.5 + Math.cos(time * 0.16) * 5;
+        tealLightRef.current.position.y = 6.5 + Math.sin(time * 0.22) * 1.5;
       }
       if (underGlowRef.current) {
-        underGlowRef.current.position.x = 2 + Math.sin(time * 0.16) * 4;
-        underGlowRef.current.position.z = 2 + Math.cos(time * 0.16) * 3;
+        underGlowRef.current.position.x = 2.0 + Math.sin(time * 0.14) * 3;
+        underGlowRef.current.position.z = 4.5 + Math.cos(time * 0.14) * 2;
       }
     }
   });
 
   return (
     <>
-      {/* Ambient forest atmosphere */}
-      <ambientLight intensity={2.6} color="#081a11" />
+      {/* Ambient forest atmosphere — deep base */}
+      <ambientLight intensity={2.0} color="#071911" />
 
-      {/* Hemisphere light: emerald sky illumination + deep shadow ground */}
-      <hemisphereLight args={['#00c982', '#020f08', 2.0]} />
+      {/* Hemisphere light: vibrant emerald sky radiance + deep shadow ground */}
+      <hemisphereLight args={['#00c982', '#020d07', 2.4]} />
 
-      {/* Crisp directional key light directly illuminating the top faces towards camera */}
+      {/* Directional key light illuminating top faces with broad satin highlights */}
       <directionalLight
         position={[4, 18, 14]}
-        intensity={3.8}
-        color="#f4fef8"
+        intensity={5.2}
+        color="#f0fcf7"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
         shadow-bias={-0.0005}
       />
 
-      {/* Secondary side directional light for rich emerald rim reflections */}
-      <directionalLight position={[-10, 12, 8]} intensity={2.0} color="#00c982" />
-
-      {/* Primary emerald point light sweeping across terrace contours */}
+      {/* Broad foreground emerald light pool focused on lower-center slabs */}
       <pointLight
         ref={emeraldLightRef}
-        position={[-1, 6, 5]}
-        intensity={8.5}
+        position={[2.5, 5.5, 7.0]}
+        intensity={12.5}
         color="#00c982"
-        distance={40}
+        distance={38}
       />
 
-      {/* Mint rim light accentuating edge bevels */}
+      {/* Soft teal light pool focused on lower-right slabs */}
       <pointLight
-        ref={mintLightRef}
-        position={[9, 9, 0]}
-        intensity={5.8}
-        color="#8cf5c2"
-        distance={35}
+        ref={tealLightRef}
+        position={[8.5, 6.5, 4.5]}
+        intensity={8.5}
+        color="#2dd4bf"
+        distance={32}
       />
 
-      {/* Sub-crevice emerald glow emanating from between and beneath tiles */}
+      {/* Sub-crevice emerald glow emanating between thick slabs */}
       <pointLight
         ref={underGlowRef}
-        position={[2, -1, 3]}
-        intensity={6.5}
+        position={[2.0, -1.2, 4.5]}
+        intensity={7.0}
         color="#059669"
-        distance={25}
+        distance={24}
       />
 
-      {/* Soft back fill light */}
-      <directionalLight position={[-12, -6, -8]} intensity={1.5} color="#04160d" />
+      {/* Soft emerald side fill across the right flank */}
+      <directionalLight position={[12, 8, 2]} intensity={2.2} color="#10b981" />
 
       {/* The full architectural terrain */}
       <primitive ref={hexGroupRef} object={hexGroup} />
@@ -365,14 +418,14 @@ export const HexCanvas: React.FC<{ className?: string }> = ({ className = '' }) 
       aria-hidden="true"
     >
       <Canvas
-        camera={{ position: [3.0, 7.5, 12.5], fov: 42 }}
+        camera={{ position: [0.0, 8.5, 14.5], fov: 46 }}
         dpr={[1, 1.5]}
         gl={{
           alpha: true,
           antialias: true,
           powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.30,
+          toneMappingExposure: 1.35,
         }}
         shadows
       >

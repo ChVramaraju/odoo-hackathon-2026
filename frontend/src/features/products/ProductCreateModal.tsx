@@ -2,10 +2,12 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react';
 import { useCreateProduct } from './useProducts';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
+import { ApiError } from '../../api/client';
 
 const productSchema = z.object({
   name: z.string().min(2, 'Product name must be at least 2 characters'),
@@ -69,8 +71,8 @@ export const ProductCreateModal: React.FC<ProductCreateModalProps> = ({ isOpen, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg bg-forest-900 border border-surface-border rounded-2xl shadow-2xl overflow-hidden">
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="lg" ariaLabel="Add New Product">
+      <div>
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border/60 bg-forest-950/60">
           <div>
@@ -78,6 +80,7 @@ export const ProductCreateModal: React.FC<ProductCreateModalProps> = ({ isOpen, 
             <p className="text-xs text-surface-textMuted">Configure catalog item and price baseline</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-surface-textMuted hover:text-surface-text hover:bg-forest-800 transition-colors"
           >
@@ -163,6 +166,17 @@ export const ProductCreateModal: React.FC<ProductCreateModalProps> = ({ isOpen, 
             />
           </div>
 
+          {createProductMutation.isError && (
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-900/60 text-xs text-red-300 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>
+                {(createProductMutation.error as ApiError)?.message ||
+                  (createProductMutation.error as Error)?.message ||
+                  'Failed to create product on backend. Verify admin permissions and required fields.'}
+              </span>
+            </div>
+          )}
+
           {/* Form Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-surface-border/60">
             <Button type="button" variant="ghost" onClick={onClose}>
@@ -174,7 +188,7 @@ export const ProductCreateModal: React.FC<ProductCreateModalProps> = ({ isOpen, 
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };
 

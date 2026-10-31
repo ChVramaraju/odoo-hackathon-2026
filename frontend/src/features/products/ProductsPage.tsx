@@ -7,6 +7,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Card } from '../../components/ui/Card';
 import { Product } from '../../types/product';
 import { useAuth } from '../../context/AuthContext';
+import { apiClient } from '../../api/client';
 
 const ProductVariantRow: React.FC<{ productId: string }> = ({ productId }) => {
   const { data: variants, isLoading } = useProductVariants(productId);
@@ -92,8 +93,8 @@ export const ProductsPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Mock-mode indicator — shown when backend is unreachable */}
-      {!isLoading && !error && data && (
+      {/* Mock-mode indicator — shown when mock mode is active */}
+      {apiClient.isMockMode() && !isLoading && !error && data && (
         <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-lg border border-emerald-800/40 bg-emerald-950/40 text-emerald-400 text-xs">
           <Database className="w-3.5 h-3.5 flex-shrink-0" />
           <span>
@@ -203,7 +204,8 @@ export const ProductsPage: React.FC = () => {
         ) : filteredProducts.length === 0 ? (
           <div className="p-12 text-center text-surface-textMuted">No products found matching filters.</div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
             <thead className="bg-forest-950/80 border-b border-surface-border/60 text-xs uppercase text-surface-textMuted tracking-wider font-semibold">
               <tr>
                 <th className="py-3.5 px-4 w-10"></th>
@@ -264,6 +266,7 @@ export const ProductsPage: React.FC = () => {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
