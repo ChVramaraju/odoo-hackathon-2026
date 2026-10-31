@@ -64,14 +64,15 @@ def _check_payments_and_invoices_provisioned() -> bool:
 
 
 payments_and_invoices_provisioned = _check_payments_and_invoices_provisioned()
+require_live_tests = os.getenv("RUN_LIVE_TESTS", "").lower() in ("true", "1") or os.getenv("REQUIRE_LIVE_TESTS", "").lower() in ("true", "1")
 
 
 @pytest.mark.skipif(
-    not live_db_configured,
+    not require_live_tests and not live_db_configured,
     reason="Live Supabase database credentials not configured in environment",
 )
 @pytest.mark.skipif(
-    not payments_and_invoices_provisioned,
+    not require_live_tests and not payments_and_invoices_provisioned,
     reason=(
         "Tables 'invoices' and 'payments' are not yet provisioned on the development Supabase database "
         "(migrations 20261031000004_invoices.sql and 20261031000005_payments.sql pending remote apply by database agent)"
@@ -81,6 +82,15 @@ payments_and_invoices_provisioned = _check_payments_and_invoices_provisioned()
 class TestLivePaymentDatabaseIntegration:
     @pytest.fixture(autouse=True)
     def setup_live_client(self):
+        if require_live_tests:
+            if not live_db_configured:
+                pytest.fail("Live database credentials (SUPABASE_URL and key) are missing while RUN_LIVE_TESTS=true")
+            if not payments_and_invoices_provisioned:
+                pytest.fail(
+                    "Live payment integration tests were explicitly required (RUN_LIVE_TESTS=true), "
+                    "but tables 'invoices' and 'payments' are not yet provisioned on the development Supabase database "
+                    "(migrations 20261031000004_invoices.sql and 20261031000005_payments.sql pending remote apply by database agent)."
+                )
         settings = get_settings()
         from supabase import create_client
 
@@ -266,3 +276,4 @@ class TestLivePaymentDatabaseIntegration:
                 await self.invoice_repo.delete(invoice_id)
             except Exception:
                 pass
+

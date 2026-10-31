@@ -97,6 +97,13 @@ class PaymentService:
             )
 
         # 4. Invoice state checks
+        if invoice.status == InvoiceStatus.DRAFT:
+            raise AppError(
+                code="INVALID_STATUS_TRANSITION",
+                message="Cannot record payment against an unconfirmed draft invoice.",
+                status_code=400,
+            )
+
         if invoice.status == InvoiceStatus.CANCELLED:
             raise AppError(
                 code="INVALID_STATUS_TRANSITION",

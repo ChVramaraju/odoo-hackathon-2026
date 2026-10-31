@@ -163,6 +163,22 @@ async def test_zero_and_negative_amount_rejected(
 
 
 @pytest.mark.asyncio
+async def test_draft_invoice_payment_rejected(
+    customer_client: AsyncClient,
+    sample_invoice: InvoiceResponse,
+    invoice_repo: InMemoryInvoiceRepository,
+):
+    await invoice_repo.update_status(sample_invoice.id, InvoiceStatus.DRAFT)
+
+    resp = await customer_client.post(
+        "/api/v1/payments",
+        json={"invoice_id": str(sample_invoice.id), "amount": "100.00"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
+
+
+@pytest.mark.asyncio
 async def test_cancelled_invoice_payment_rejected(
     customer_client: AsyncClient,
     sample_invoice: InvoiceResponse,
