@@ -19,13 +19,20 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Helper function: Verify if the authenticated caller has admin privileges
--- Checks both JWT claims and public.profiles table (if initialized)
+-- Secure implementation:
+-- 1. Evaluates server-controlled app_metadata only (never user_metadata, which is client-writable).
+-- 2. Falls back to public.profiles table if initialized.
+-- 3. Sets an explicit search_path to prevent SECURITY DEFINER search-path hijacking.
 CREATE OR REPLACE FUNCTION is_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+SET search_path = public, auth
+AS $$
 BEGIN
-    IF (coalesce(auth.jwt() -> 'app_metadata' ->> 'role', auth.jwt() -> 'user_metadata' ->> 'role') = 'admin') THEN
+    -- Trust only server-assigned app_metadata; reject client-editable user_metadata
+    IF (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin') THEN
         RETURN true;
     END IF;
+    -- Fallback: check trusted public.profiles table if present
     IF EXISTS (
         SELECT 1 FROM information_schema.tables 
         WHERE table_schema = 'public' AND table_name = 'profiles'
@@ -41,11 +48,15 @@ $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
 -- Helper function: Verify if the authenticated caller has staff or admin privileges
 CREATE OR REPLACE FUNCTION is_staff_or_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+SET search_path = public, auth
+AS $$
 BEGIN
-    IF (coalesce(auth.jwt() -> 'app_metadata' ->> 'role', auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'staff')) THEN
+    -- Trust only server-assigned app_metadata; reject client-editable user_metadata
+    IF (auth.jwt() -> 'app_metadata' ->> 'role' IN ('admin', 'staff')) THEN
         RETURN true;
     END IF;
+    -- Fallback: check trusted public.profiles table if present
     IF EXISTS (
         SELECT 1 FROM information_schema.tables 
         WHERE table_schema = 'public' AND table_name = 'profiles'

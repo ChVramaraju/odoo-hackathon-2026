@@ -116,8 +116,8 @@ Associates plans with bundled or optional add-on products and variants.
 All four catalog tables have Row Level Security enabled (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`).
 
 ### Role-verification helpers
-- `is_admin()`: Verifies if the request context carries an admin role. First evaluates JWT claims (`auth.jwt() -> 'app_metadata'` or `'user_metadata'`); if omitted, falls back to `public.profiles` where `id = auth.uid() AND role = 'admin'`.
-- `is_staff_or_admin()`: Similar check verifying if the caller has either `admin` or `staff` role.
+- `is_admin()`: Verifies if the request context carries an admin role. Evaluates server-controlled JWT `app_metadata` only (never user_metadata, which is client-writable); if omitted, falls back to trusted `public.profiles` where `id = auth.uid() AND role = 'admin'`. Explicitly sets `search_path = public, auth` to prevent `SECURITY DEFINER` path hijacking.
+- `is_staff_or_admin()`: Similar check verifying if the caller has either `admin` or `staff` role in `app_metadata` or `public.profiles`. Explicitly sets `search_path = public, auth`.
 
 ### Policy matrix
 
