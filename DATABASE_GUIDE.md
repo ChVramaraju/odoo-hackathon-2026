@@ -25,8 +25,8 @@ Stores core purchasable catalog items (subscriptions, standalone services, and p
 | `sales_price` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (sales_price >= 0)` | `sales_price: Decimal` |
 | `cost_price` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (cost_price >= 0)` | `cost_price: Decimal` |
 | `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | `currency: str = "INR"` |
-| `description` | `TEXT` | Yes | `NULL` | Customer-facing summary | `description: Optional[str]` |
-| `internal_notes`| `TEXT` | Yes | `NULL` | Internal admin/staff notes | `internal_notes: Optional[str]` |
+| `description` | `TEXT` | Yes | `NULL` | Customer-facing summary (visible to customers & public) | `description: Optional[str]` |
+| `internal_notes`| `TEXT` | Yes | `NULL` | Internal admin/staff notes (masked to null for customers) | `internal_notes: Optional[str]` (API alias: `notes`) |
 | `is_active` | `BOOLEAN` | No | `true` | `NOT NULL` | `is_active: bool = True` |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
 | `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | `updated_at: datetime` |
@@ -77,7 +77,7 @@ Stores subscription plans, recurrence cycles, term rules, and status.
 | `minimum_quantity`| `INTEGER` | No | `1` | `CHECK (minimum_quantity >= 1)` | `minimum_quantity: int = 1` |
 | `start_date` | `DATE` | Yes | `NULL` | Plan availability start | `start_date: Optional[date]` |
 | `end_date` | `DATE` | Yes | `NULL` | `CHECK (end_date IS NULL OR end_date >= start_date)` | `end_date: Optional[date]` |
-| `end_of_term_behavior`| `VARCHAR(50)`| No | `'renew'`| `CHECK (end_of_term_behavior IN ('renew', 'close', 'pause'))` | `end_of_term_behavior: str` |
+| `end_of_term_behavior`| `VARCHAR(50)`| No | `'renew'`| `CHECK (end_of_term_behavior IN ('renew', 'close', 'pause'))` | `end_of_term_behavior: str` (API accepts 'cancel', persisted as 'close') |
 | `status` | `VARCHAR(20)` | No | `'active'` | `CHECK (status IN ('draft', 'active', 'closed', 'archived'))` | `status: str` |
 | `is_active` | `BOOLEAN` | No | `true` | `NOT NULL` | `is_active: bool = True` |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
@@ -136,9 +136,11 @@ All four catalog tables have Row Level Security enabled (`ALTER TABLE ... ENABLE
 | `plan_products` | "Allow staff and admin to read all plan products" | `SELECT` | `authenticated` | `is_staff_or_admin()` |
 | `plan_products` | "Allow admin to insert/update/delete plan products" | `INSERT`, `UPDATE`, `DELETE` | `authenticated` | `is_admin()` |
 
-### Grants
+### Grants & Service-Role Security Boundary
 - `service_role`: Granted `ALL` privileges on all 4 tables for FastAPI backend service access.
-- `anon`, `authenticated`: Granted `SELECT` privileges; writes are prohibited and rejected by RLS.
+  > [!IMPORTANT]
+  > Since `SUPABASE_SERVICE_ROLE_KEY` bypasses PostgreSQL Row Level Security (RLS), all FastAPI backend endpoints enforce role-based access control (`require_role(...)`) server-side before executing any queries.
+- `anon`, `authenticated`: Granted `SELECT` privileges; direct client writes are prohibited and rejected by RLS.
 
 ---
 
