@@ -23,6 +23,10 @@ from app.factory import create_app
 from app.repositories.plan_repository import InMemoryPlanRepository, get_plan_repository
 from app.repositories.product_repository import InMemoryProductRepository, get_product_repository
 from app.repositories.quotation_repository import InMemoryQuotationRepository, get_quotation_repository
+from app.repositories.subscription_repository import (
+    InMemorySubscriptionRepository,
+    get_subscription_repository,
+)
 
 
 @pytest.fixture(scope="session")
@@ -46,6 +50,12 @@ def prod_repo() -> InMemoryProductRepository:
 def quotation_repo() -> InMemoryQuotationRepository:
     """Isolated quotation repository per test."""
     return InMemoryQuotationRepository()
+
+
+@pytest.fixture
+def subscription_repo() -> InMemorySubscriptionRepository:
+    """Isolated subscription repository per test."""
+    return InMemorySubscriptionRepository()
 
 
 @pytest.fixture
@@ -83,12 +93,14 @@ async def client(
     plan_repo: InMemoryPlanRepository,
     prod_repo: InMemoryProductRepository,
     quotation_repo: InMemoryQuotationRepository,
+    subscription_repo: InMemorySubscriptionRepository,
 ) -> AsyncClient:
     """Anonymous / unauthenticated client."""
     app = create_app()
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
+    app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_current_user_optional] = lambda: None
     app.dependency_overrides[get_optional_current_user] = lambda: None
 
@@ -103,12 +115,14 @@ async def admin_client(
     plan_repo: InMemoryPlanRepository,
     prod_repo: InMemoryProductRepository,
     quotation_repo: InMemoryQuotationRepository,
+    subscription_repo: InMemorySubscriptionRepository,
 ) -> AsyncClient:
     """Client authenticated with 'admin' role."""
     app = create_app()
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
+    app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_current_user] = lambda: admin_user
     app.dependency_overrides[get_current_user_optional] = lambda: admin_user
     app.dependency_overrides[get_optional_current_user] = lambda: admin_user
@@ -124,12 +138,14 @@ async def staff_client(
     plan_repo: InMemoryPlanRepository,
     prod_repo: InMemoryProductRepository,
     quotation_repo: InMemoryQuotationRepository,
+    subscription_repo: InMemorySubscriptionRepository,
 ) -> AsyncClient:
     """Client authenticated with 'staff' role."""
     app = create_app()
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
+    app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_current_user] = lambda: staff_user
     app.dependency_overrides[get_current_user_optional] = lambda: staff_user
     app.dependency_overrides[get_optional_current_user] = lambda: staff_user
@@ -145,12 +161,14 @@ async def customer_client(
     plan_repo: InMemoryPlanRepository,
     prod_repo: InMemoryProductRepository,
     quotation_repo: InMemoryQuotationRepository,
+    subscription_repo: InMemorySubscriptionRepository,
 ) -> AsyncClient:
     """Client authenticated with 'customer' role."""
     app = create_app()
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_quotation_repository] = lambda: quotation_repo
+    app.dependency_overrides[get_subscription_repository] = lambda: subscription_repo
     app.dependency_overrides[get_current_user] = lambda: customer_user
     app.dependency_overrides[get_current_user_optional] = lambda: customer_user
     app.dependency_overrides[get_optional_current_user] = lambda: customer_user

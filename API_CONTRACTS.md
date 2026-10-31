@@ -251,3 +251,115 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 #### `PATCH /api/v1/plans/{plan_id}`
 - **Access:** Admin only (`require_role(["admin"])`)
 - **Status:** `200 OK`
+
+
+---
+
+### 3. Quotations
+
+#### Data Integrity & Snapshot Rules:
+- Server-side calculation of all financial fields (`subtotal`, `discount_total`, `tax_total`, `total_amount`, `line_total`).
+- Snapshots catalog price at creation time; future catalog updates do not alter existing quotations.
+- Role-based authorization & data isolation: customers can only view and confirm their own quotations.
+- Status state transitions: `draft` -> `confirmed`. Prevents duplicate or expired confirmations.
+
+#### `POST /api/v1/quotations`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "customer_id": "00000000-0000-0000-0000-000000000000",
+    "currency": "INR",
+    "valid_until": "2026-11-30",
+    "notes": "Annual subscription bundle",
+    "lines": [
+      {
+        "plan_id": "00000000-0000-0000-0000-000000000001",
+        "quantity": "1.00",
+        "discount_percentage": "10.00",
+        "tax_rate": "18.00"
+      }
+    ]
+  }
+  ```
+
+#### `GET /api/v1/quotations`
+- **Access:** Authenticated (Role-scoped: customers see only their own)
+- **Status:** `200 OK`
+
+#### `GET /api/v1/quotations/{id}`
+- **Access:** Authenticated (Customer isolation enforced)
+- **Status:** `200 OK` (or `404 Not Found`)
+
+#### `POST /api/v1/quotations/{id}/confirm`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK`
+- **Behavior:** Conditionally transitions quotation status from `draft` to `confirmed`. Rejects expired or already confirmed quotes with `400 Bad Request`.
+
+---
+
+### 4. Subscription Management
+
+#### Core Rules & State Machine:
+- **Statuses:** `draft`, `active`, `paused`, `closed`, `cancelled`.
+- **Transitions:**
+  - Direct creation starts in `active`.
+  - `active` -> `paused` (via `/pause`), `paused` -> `active` (via `/resume`).
+  - `active` / `paused` -> `closed` (via `/close`).
+  - `/renew` advances `next_billing_date` by the billing frequency (e.g. 1 month).
+- **Conversion from Quotation (`POST /api/v1/subscriptions/from-quotation/{quotation_id}`):**
+  - Converts a `confirmed` quotation into an `active` subscription with lines.
+  - **Idempotency:** Calling multiple times with the same `quotation_id` returns the existing subscription without creating duplicates.
+  - Rejects unconfirmed quotations with `400 Bad Request` (`INVALID_STATUS_TRANSITION`).
+- **Data Isolation:** Customers can only view, update, pause, resume, close, or convert quotations for their own subscriptions.
+
+#### `POST /api/v1/subscriptions`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "customer_id": "00000000-0000-0000-0000-000000000000",
+    "plan_id": "00000000-0000-0000-0000-000000000001",
+    "currency": "INR",
+    "billing_frequency": "monthly",
+    "start_date": "2026-11-01",
+    "notes": "Enterprise subscription"
+  }
+  ```
+
+#### `POST /api/v1/subscriptions/from-quotation/{quotation_id}`
+- **Access:** Authenticated (Customer owns quotation, or Staff / Admin)
+- **Status:** `201 Created`
+- **Behavior:** Idempotently converts confirmed quotation to active subscription.
+
+#### `GET /api/v1/subscriptions`
+- **Access:** Authenticated (Customer-isolated / Staff & Admin)
+- **Query Params:** `customer_id`, `status`, `page`, `page_size`
+- **Status:** `200 OK`
+
+#### `GET /api/v1/subscriptions/{id}`
+- **Access:** Authenticated (Customer-isolated)
+- **Status:** `200 OK` (or `404 Not Found`)
+
+#### `PATCH /api/v1/subscriptions/{id}`
+- **Access:** Authenticated (Authorized customer or Staff / Admin)
+- **Status:** `200 OK`
+- **Request Body:** `{"notes": "...", "end_date": "...", "next_billing_date": "..."}`
+
+#### `POST /api/v1/subscriptions/{id}/pause`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK` (Transitions `active` -> `paused`)
+
+#### `POST /api/v1/subscriptions/{id}/resume`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK` (Transitions `paused` -> `active`)
+
+#### `POST /api/v1/subscriptions/{id}/renew`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK` (Advances `next_billing_date`)
+
+#### `POST /api/v1/subscriptions/{id}/close`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK` (Transitions to `closed`)

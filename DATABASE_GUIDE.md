@@ -262,6 +262,71 @@ create_quotation_atomic(p_header JSONB, p_lines JSONB) RETURNS JSONB
 
 ---
 
+## Subscription Schema Specification & Backend Contract Mapping (Migration `20261031000003_subscriptions.sql`)
+
+### 7. `subscriptions`
+Stores ongoing recurring subscription contracts, customer ownership, billing cycles, and status.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Backend Mapping (Pydantic / FastAPI) |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | `id: UUID` |
+| `subscription_number` | `VARCHAR(64)` | No | — | `UNIQUE`, `NOT NULL`, e.g. `SUB-YYYYMM-XXXXXX` | `subscription_number: str` |
+| `customer_id` | `UUID` | No | — | References auth customer / user | `customer_id: UUID` |
+| `plan_id` | `UUID` | Yes | `NULL` | `REFERENCES plans(id) ON DELETE RESTRICT` | `plan_id: Optional[UUID]` |
+| `quotation_id` | `UUID` | Yes | `NULL` | `REFERENCES quotations(id) ON DELETE RESTRICT`, unique | `quotation_id: Optional[UUID]` |
+| `status` | `VARCHAR(20)` | No | `'active'` | `CHECK (status IN ('draft', 'active', 'paused', 'closed', 'cancelled'))` | `status: SubscriptionStatus` |
+| `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | `currency: str = "INR"` |
+| `billing_frequency` | `VARCHAR(20)` | No | `'monthly'` | `CHECK (billing_frequency IN ('weekly', 'monthly', 'quarterly', 'yearly'))` | `billing_frequency: str` |
+| `subtotal` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (subtotal >= 0)` | `subtotal: Decimal` |
+| `discount_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_total >= 0)` | `discount_total: Decimal` |
+| `tax_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_total >= 0)` | `tax_total: Decimal` |
+| `total_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (total_amount >= 0)` | `total_amount: Decimal` |
+| `start_date` | `DATE` | No | `CURRENT_DATE` | Subscription start date | `start_date: date` |
+| `end_date` | `DATE` | Yes | `NULL` | `CHECK (end_date IS NULL OR end_date >= start_date)` | `end_date: Optional[date]` |
+| `next_billing_date` | `DATE` | No | — | Next automated billing run date | `next_billing_date: date` |
+| `paused_at` | `TIMESTAMPTZ` | Yes | `NULL` | Timestamp when subscription was paused | `paused_at: Optional[datetime]` |
+| `closed_at` | `TIMESTAMPTZ` | Yes | `NULL` | Timestamp when subscription was closed | `closed_at: Optional[datetime]` |
+| `notes` | `TEXT` | Yes | `NULL` | Contract / customer notes | `notes: Optional[str]` |
+| `created_by` | `UUID` | Yes | `NULL` | Creator user ID | `created_by: Optional[UUID]` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | `updated_at: datetime` |
+
+*Indexes:*
+- `idx_subscriptions_customer_id ON subscriptions(customer_id)`
+- `idx_subscriptions_status ON subscriptions(status)`
+- `idx_subscriptions_next_billing_date ON subscriptions(next_billing_date)`
+- `idx_subscriptions_quotation_id ON subscriptions(quotation_id)`
+
+---
+
+### 8. `subscription_lines`
+Stores itemized services, products, or plans attached to a recurring subscription contract.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Backend Mapping (Pydantic / FastAPI) |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | `id: UUID` |
+| `subscription_id` | `UUID` | No | — | `REFERENCES subscriptions(id) ON DELETE CASCADE` | `subscription_id: UUID` |
+| `line_type` | `VARCHAR(20)` | No | `'product'` | `CHECK (line_type IN ('product', 'plan'))` | `line_type: SubscriptionLineType` |
+| `line_number` | `INTEGER` | No | `1` | `CHECK (line_number >= 1)` | `line_number: int` |
+| `product_id` | `UUID` | Yes | `NULL` | `REFERENCES products(id) ON DELETE RESTRICT` | `product_id: Optional[UUID]` |
+| `variant_id` | `UUID` | Yes | `NULL` | `REFERENCES product_variants(id) ON DELETE RESTRICT` | `variant_id: Optional[UUID]` |
+| `plan_id` | `UUID` | Yes | `NULL` | `REFERENCES plans(id) ON DELETE RESTRICT` | `plan_id: Optional[UUID]` |
+| `description` | `VARCHAR(500)` | No | — | Snapshot item description | `description: str` |
+| `quantity` | `NUMERIC(10, 2)` | No | `1.00` | `CHECK (quantity > 0)` | `quantity: Decimal` |
+| `unit_price` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (unit_price >= 0)` | `unit_price: Decimal` |
+| `discount_percentage` | `NUMERIC(5, 2)` | No | `0.00` | `CHECK (discount_percentage BETWEEN 0 AND 100)` | `discount_percentage: Decimal` |
+| `discount_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_amount >= 0)` | `discount_amount: Decimal` |
+| `tax_rate` | `NUMERIC(5, 2)` | No | `0.00` | `CHECK (tax_rate BETWEEN 0 AND 100)` | `tax_rate: Decimal` |
+| `tax_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_amount >= 0)` | `tax_amount: Decimal` |
+| `line_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (line_total >= 0)` | `line_total: Decimal` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
+
+*Indexes & Constraints:*
+- `idx_subscription_lines_sub_id ON subscription_lines(subscription_id)`
+- Mutual exclusivity check: `chk_subscription_line_item CHECK ((line_type = 'product' AND product_id IS NOT NULL AND plan_id IS NULL) OR (line_type = 'plan' AND plan_id IS NOT NULL AND product_id IS NULL AND variant_id IS NULL))`
+
+---
+
 ## Future data model targets (Upcoming phases)
 
 ### Identity and access
