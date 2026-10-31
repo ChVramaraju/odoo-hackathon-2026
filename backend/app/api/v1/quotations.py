@@ -89,3 +89,4 @@ async def confirm_quotation(
 ) -> QuotationResponse:
     """Confirms a valid draft quotation and locks it against duplicate confirmations."""
     return await service.confirm_quotation(quotation_id, current_user)
+

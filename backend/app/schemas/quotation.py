@@ -104,3 +104,4 @@ class QuotationListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
