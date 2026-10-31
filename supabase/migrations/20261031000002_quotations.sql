@@ -267,10 +267,17 @@ SET search_path = public
 AS $$
 DECLARE
     v_quotation_id UUID;
-    v_quotation_record RECORD;
+    v_result JSONB;
     v_line JSONB;
+    v_line_number INTEGER := 0;
 BEGIN
-    v_quotation_id := COALESCE((p_header->>'id')::UUID, gen_random_uuid());
+    -- Enforce business rule: quotation must contain at least one line item
+    IF p_lines IS NULL OR jsonb_array_length(p_lines) = 0 THEN
+        RAISE EXCEPTION 'Quotation must contain at least one line item.'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    v_quotation_id := COALESCE(NULLIF(trim(p_header->>'id'), '')::UUID, gen_random_uuid());
 
     -- Insert header
     INSERT INTO quotations (
@@ -291,68 +298,78 @@ BEGIN
         created_by
     ) VALUES (
         v_quotation_id,
-        COALESCE(p_header->>'quotation_number', generate_quotation_number()),
-        (p_header->>'customer_id')::UUID,
-        (p_header->>'plan_id')::UUID,
-        COALESCE(p_header->>'status', 'draft'),
-        COALESCE(p_header->>'currency', 'INR'),
+        COALESCE(NULLIF(trim(p_header->>'quotation_number'), ''), generate_quotation_number()),
+        NULLIF(trim(p_header->>'customer_id'), '')::UUID,
+        NULLIF(trim(p_header->>'plan_id'), '')::UUID,
+        COALESCE(NULLIF(trim(p_header->>'status'), ''), 'draft'),
+        COALESCE(NULLIF(trim(p_header->>'currency'), ''), 'INR'),
         COALESCE((p_header->>'subtotal')::NUMERIC, 0.00),
         COALESCE((p_header->>'discount_total')::NUMERIC, 0.00),
         COALESCE((p_header->>'tax_total')::NUMERIC, 0.00),
         COALESCE((p_header->>'total_amount')::NUMERIC, 0.00),
-        (p_header->>'valid_until')::DATE,
-        (p_header->>'confirmed_at')::TIMESTAMPTZ,
+        NULLIF(trim(p_header->>'valid_until'), '')::DATE,
+        NULLIF(trim(p_header->>'confirmed_at'), '')::TIMESTAMPTZ,
         p_header->>'notes',
         p_header->>'internal_notes',
-        (p_header->>'created_by')::UUID
+        NULLIF(trim(p_header->>'created_by'), '')::UUID
     );
 
     -- Insert child line items
-    IF p_lines IS NOT NULL AND jsonb_array_length(p_lines) > 0 THEN
-        FOR v_line IN SELECT * FROM jsonb_array_elements(p_lines)
-        LOOP
-            INSERT INTO quotation_lines (
-                id,
-                quotation_id,
-                line_type,
-                product_id,
-                variant_id,
-                plan_id,
-                line_number,
-                description,
-                quantity,
-                unit_price,
-                discount_percentage,
-                discount_amount,
-                tax_rate,
-                tax_amount,
-                line_total
-            ) VALUES (
-                COALESCE((v_line->>'id')::UUID, gen_random_uuid()),
-                v_quotation_id,
-                COALESCE(v_line->>'line_type', CASE WHEN v_line->>'plan_id' IS NOT NULL THEN 'plan' ELSE 'product' END),
-                (v_line->>'product_id')::UUID,
-                (v_line->>'variant_id')::UUID,
-                (v_line->>'plan_id')::UUID,
-                COALESCE((v_line->>'line_number')::INTEGER, 1),
-                v_line->>'description',
-                COALESCE((v_line->>'quantity')::NUMERIC, 1.00),
-                COALESCE((v_line->>'unit_price')::NUMERIC, 0.00),
-                COALESCE((v_line->>'discount_percentage')::NUMERIC, 0.00),
-                COALESCE((v_line->>'discount_amount')::NUMERIC, 0.00),
-                COALESCE((v_line->>'tax_rate')::NUMERIC, 0.00),
-                COALESCE((v_line->>'tax_amount')::NUMERIC, 0.00),
-                COALESCE((v_line->>'line_total')::NUMERIC, 0.00)
-            );
-        END LOOP;
-    END IF;
+    FOR v_line IN SELECT * FROM jsonb_array_elements(p_lines)
+    LOOP
+        v_line_number := v_line_number + 1;
+        INSERT INTO quotation_lines (
+            id,
+            quotation_id,
+            line_type,
+            product_id,
+            variant_id,
+            plan_id,
+            line_number,
+            description,
+            quantity,
+            unit_price,
+            discount_percentage,
+            discount_amount,
+            tax_rate,
+            tax_amount,
+            line_total
+        ) VALUES (
+            COALESCE(NULLIF(trim(v_line->>'id'), '')::UUID, gen_random_uuid()),
+            v_quotation_id,
+            COALESCE(NULLIF(trim(v_line->>'line_type'), ''), CASE WHEN v_line->>'plan_id' IS NOT NULL AND trim(v_line->>'plan_id') <> '' THEN 'plan' ELSE 'product' END),
+            NULLIF(trim(v_line->>'product_id'), '')::UUID,
+            NULLIF(trim(v_line->>'variant_id'), '')::UUID,
+            NULLIF(trim(v_line->>'plan_id'), '')::UUID,
+            COALESCE((v_line->>'line_number')::INTEGER, v_line_number),
+            COALESCE(v_line->>'description', ''),
+            COALESCE((v_line->>'quantity')::NUMERIC, 1.00),
+            COALESCE((v_line->>'unit_price')::NUMERIC, 0.00),
+            COALESCE((v_line->>'discount_percentage')::NUMERIC, 0.00),
+            COALESCE((v_line->>'discount_amount')::NUMERIC, 0.00),
+            COALESCE((v_line->>'tax_rate')::NUMERIC, 0.00),
+            COALESCE((v_line->>'tax_amount')::NUMERIC, 0.00),
+            COALESCE((v_line->>'line_total')::NUMERIC, 0.00)
+        );
+    END LOOP;
 
-    -- Retrieve complete header record
-    SELECT * INTO v_quotation_record
-    FROM quotations
-    WHERE id = v_quotation_id;
+    -- Retrieve complete header record with nested child lines
+    SELECT 
+        to_jsonb(q.*) || jsonb_build_object(
+            'lines', COALESCE(
+                (
+                    SELECT jsonb_agg(to_jsonb(l.*) ORDER BY l.line_number, l.created_at)
+                    FROM quotation_lines l
+                    WHERE l.quotation_id = v_quotation_id
+                ),
+                '[]'::jsonb
+            )
+        )
+    INTO v_result
+    FROM quotations q
+    WHERE q.id = v_quotation_id;
 
-    RETURN to_jsonb(v_quotation_record);
+    RETURN v_result;
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
