@@ -25,6 +25,14 @@ from app.factory import create_app
 from app.repositories.plan_repository import SupabasePlanRepository, get_plan_repository
 from app.repositories.product_repository import SupabaseProductRepository, get_product_repository
 
+# Load environment from .env or backend/.env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    load_dotenv("backend/.env")
+except ImportError:
+    pass
+
 # Guard: Only run if live Supabase project is configured
 live_db_configured = bool(
     os.getenv("SUPABASE_URL") and (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY"))
