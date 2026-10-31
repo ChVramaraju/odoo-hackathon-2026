@@ -83,3 +83,153 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 3. Update migration or database function if required.
 4. Add/update tests and examples.
 5. Communicate breaking changes before merging.
+
+---
+
+## Implemented Phase B Specifications (Products, Variants & Plans)
+
+### 1. Products & Variants
+
+#### `POST /api/v1/products`
+- **Access:** Admin only (`require_role(["admin"])`)
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "name": "Cloud Storage Pro",
+    "type": "service",
+    "sales_price": "29.99",
+    "cost_price": "10.00",
+    "currency": "USD",
+    "notes": "Premium cloud storage tier",
+    "is_active": true
+  }
+  ```
+- **Response Body (`201`):**
+  ```json
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "name": "Cloud Storage Pro",
+    "type": "service",
+    "sales_price": "29.99",
+    "cost_price": "10.00",
+    "currency": "USD",
+    "notes": "Premium cloud storage tier",
+    "is_active": true,
+    "created_at": "2026-10-31T10:00:00Z",
+    "updated_at": "2026-10-31T10:00:00Z"
+  }
+  ```
+
+#### `GET /api/v1/products`
+- **Access:** Public / Authenticated
+- **Query Params:** `active_only` (bool, default `false`), `page` (int, default `1`), `page_size` (int, default `20`)
+- **Response Body (`200`):**
+  ```json
+  {
+    "items": [
+      {
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "name": "Cloud Storage Pro",
+        "type": "service",
+        "sales_price": "29.99",
+        "cost_price": "10.00",
+        "currency": "USD",
+        "notes": "Premium cloud storage tier",
+        "is_active": true,
+        "created_at": "2026-10-31T10:00:00Z",
+        "updated_at": "2026-10-31T10:00:00Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+  ```
+
+#### `GET /api/v1/products/{product_id}`
+- **Access:** Public / Authenticated
+- **Status:** `200 OK` (or `404 Not Found`)
+
+#### `PATCH /api/v1/products/{product_id}`
+- **Access:** Admin only
+- **Status:** `200 OK`
+
+#### `POST /api/v1/products/{product_id}/variants`
+- **Access:** Admin only
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "name": "User Seat",
+    "value": "10-User Pack",
+    "price_adjustment": "25.00",
+    "sku": "CRM-10U",
+    "is_active": true
+  }
+  ```
+- **Response Body (`201`):**
+  ```json
+  {
+    "id": "4da85f64-5717-4562-b3fc-2c963f66afa7",
+    "product_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "name": "User Seat",
+    "value": "10-User Pack",
+    "price_adjustment": "25.00",
+    "sku": "CRM-10U",
+    "is_active": true,
+    "created_at": "2026-10-31T10:00:00Z",
+    "updated_at": "2026-10-31T10:00:00Z"
+  }
+  ```
+
+#### `GET /api/v1/products/{product_id}/variants`
+- **Access:** Public / Authenticated
+- **Status:** `200 OK`
+- **Response Body (`200`):** Array of `ProductVariantResponse` objects.
+
+---
+
+### 2. Subscription Plans
+
+#### `POST /api/v1/plans`
+- **Access:** Admin only
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "name": "Standard Monthly",
+    "description": "Standard business tier billed monthly",
+    "price": "49.00",
+    "currency": "USD",
+    "billing_frequency": "monthly",
+    "billing_interval": 1,
+    "minimum_quantity": 1,
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "end_of_term_behavior": "renew",
+    "status": "active"
+  }
+  ```
+- **Response Body (`201`):** `PlanResponse` object.
+
+#### `GET /api/v1/plans`
+- **Access:** Public / Authenticated
+- **Query Params:** `status` (active/closed), `billing_frequency` (daily/weekly/monthly/yearly), `page` (int), `page_size` (int)
+- **Response Body (`200`):**
+  ```json
+  {
+    "items": [],
+    "total": 0,
+    "page": 1,
+    "page_size": 20
+  }
+  ```
+
+#### `GET /api/v1/plans/{plan_id}`
+- **Access:** Public / Authenticated
+- **Status:** `200 OK` (or `404 Not Found`)
+
+#### `PATCH /api/v1/plans/{plan_id}`
+- **Access:** Admin only
+- **Status:** `200 OK`
