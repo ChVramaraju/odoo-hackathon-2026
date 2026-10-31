@@ -363,3 +363,59 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 #### `POST /api/v1/subscriptions/{id}/close`
 - **Access:** Authenticated (Customer / Staff / Admin)
 - **Status:** `200 OK` (Transitions to `closed`)
+
+
+---
+
+### 5. Invoices & Billing
+
+#### Core Rules & Invariants:
+- **Statuses:** `draft` -> `confirmed` -> `paid` (or `cancelled`).
+- **Server Calculation & Precision:** Exact 2-decimal financial calculations (`Decimal("0.01")`). Client-submitted totals are ignored; backend computes gross, discount, tax, total, and balance.
+- **Balance Invariant:** `balance = total_amount - amount_paid`.
+- **Idempotent Recurring Billing (`POST /api/v1/invoices/from-subscription/{subscription_id}`):**
+  - Unique per `(subscription_id, billing_period_start, billing_period_end)`.
+  - Re-triggering generation for the same subscription billing period returns the existing invoice without duplicate creation.
+- **Customer Data Isolation:** Customers can only view, list, confirm, or cancel their own invoices.
+
+#### `POST /api/v1/invoices`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `201 Created`
+- **Request Body:**
+  ```json
+  {
+    "customer_id": "00000000-0000-0000-0000-000000000000",
+    "currency": "INR",
+    "due_date": "2026-11-30",
+    "lines": [
+      {
+        "plan_id": "00000000-0000-0000-0000-000000000001",
+        "quantity": "1.00",
+        "discount_percentage": "10.00",
+        "tax_rate": "18.00"
+      }
+    ]
+  }
+  ```
+
+#### `POST /api/v1/invoices/from-subscription/{subscription_id}`
+- **Access:** Authenticated (Customer owns subscription, or Staff / Admin)
+- **Status:** `201 Created`
+- **Behavior:** Idempotently generates invoice from subscription lines for the specified billing period.
+
+#### `GET /api/v1/invoices`
+- **Access:** Authenticated (Role-scoped: customers see only their own)
+- **Query Params:** `customer_id`, `status`, `subscription_id`, `page`, `page_size`
+- **Status:** `200 OK`
+
+#### `GET /api/v1/invoices/{id}`
+- **Access:** Authenticated (Customer isolation enforced)
+- **Status:** `200 OK` (or `404 Not Found`)
+
+#### `POST /api/v1/invoices/{id}/confirm`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK` (Transitions `draft` -> `confirmed`)
+
+#### `POST /api/v1/invoices/{id}/cancel`
+- **Access:** Authenticated (Customer / Staff / Admin)
+- **Status:** `200 OK` (Transitions to `cancelled`, rejected if payments recorded)

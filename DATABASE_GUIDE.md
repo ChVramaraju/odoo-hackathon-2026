@@ -327,6 +327,75 @@ Stores itemized services, products, or plans attached to a recurring subscriptio
 
 ---
 
+## Invoices Schema Specification & Backend Contract Mapping (Migration `20261031000004_invoices.sql`)
+
+### 9. `invoices`
+Stores customer invoices, billing periods, payment balances, and lifecycle states.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Backend Mapping (Pydantic / FastAPI) |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | `id: UUID` |
+| `invoice_number` | `VARCHAR(64)` | No | — | `UNIQUE`, `NOT NULL`, e.g. `INV-YYYYMM-XXXXXX` | `invoice_number: str` |
+| `customer_id` | `UUID` | No | — | References auth customer / user | `customer_id: UUID` |
+| `subscription_id` | `UUID` | Yes | `NULL` | `REFERENCES subscriptions(id) ON DELETE RESTRICT` | `subscription_id: Optional[UUID]` |
+| `quotation_id` | `UUID` | Yes | `NULL` | `REFERENCES quotations(id) ON DELETE RESTRICT` | `quotation_id: Optional[UUID]` |
+| `status` | `VARCHAR(20)` | No | `'draft'` | `CHECK (status IN ('draft', 'confirmed', 'paid', 'cancelled', 'overdue'))` | `status: InvoiceStatus` |
+| `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | `currency: str = "INR"` |
+| `subtotal` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (subtotal >= 0)` | `subtotal: Decimal` |
+| `discount_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_total >= 0)` | `discount_total: Decimal` |
+| `tax_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_total >= 0)` | `tax_total: Decimal` |
+| `total_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (total_amount >= 0)` | `total_amount: Decimal` |
+| `amount_paid` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (amount_paid >= 0)` | `amount_paid: Decimal` |
+| `balance` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (balance >= 0)` | `balance: Decimal` |
+| `invoice_date` | `DATE` | No | `CURRENT_DATE` | Invoice issue date | `invoice_date: date` |
+| `due_date` | `DATE` | No | — | Payment due date (`due_date >= invoice_date`) | `due_date: date` |
+| `billing_period_start` | `DATE` | Yes | `NULL` | Recurring billing cycle start | `billing_period_start: Optional[date]` |
+| `billing_period_end` | `DATE` | Yes | `NULL` | Recurring billing cycle end | `billing_period_end: Optional[date]` |
+| `confirmed_at` | `TIMESTAMPTZ` | Yes | `NULL` | Timestamp when confirmed | `confirmed_at: Optional[datetime]` |
+| `paid_at` | `TIMESTAMPTZ` | Yes | `NULL` | Timestamp when paid in full | `paid_at: Optional[datetime]` |
+| `cancelled_at` | `TIMESTAMPTZ` | Yes | `NULL` | Timestamp when cancelled | `cancelled_at: Optional[datetime]` |
+| `notes` | `TEXT` | Yes | `NULL` | Customer-visible or operational notes | `notes: Optional[str]` |
+| `created_by` | `UUID` | Yes | `NULL` | Creator user ID | `created_by: Optional[UUID]` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | `updated_at: datetime` |
+
+*Indexes & Unique Constraints:*
+- `uq_invoices_subscription_billing_period UNIQUE (subscription_id, billing_period_start, billing_period_end) WHERE status <> 'cancelled'` (Guarantees billing run idempotency!)
+- `idx_invoices_customer_id ON invoices(customer_id)`
+- `idx_invoices_status ON invoices(status)`
+- `idx_invoices_due_date ON invoices(due_date)`
+- `idx_invoices_subscription_id ON invoices(subscription_id)`
+
+---
+
+### 10. `invoice_lines`
+Stores itemized product/plan lines with historical pricing, discount, and tax snapshots.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Backend Mapping (Pydantic / FastAPI) |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | `id: UUID` |
+| `invoice_id` | `UUID` | No | — | `REFERENCES invoices(id) ON DELETE CASCADE` | `invoice_id: UUID` |
+| `line_type` | `VARCHAR(20)` | No | `'product'` | `CHECK (line_type IN ('product', 'plan'))` | `line_type: InvoiceLineType` |
+| `line_number` | `INTEGER` | No | `1` | `CHECK (line_number >= 1)` | `line_number: int` |
+| `product_id` | `UUID` | Yes | `NULL` | `REFERENCES products(id) ON DELETE RESTRICT` | `product_id: Optional[UUID]` |
+| `variant_id` | `UUID` | Yes | `NULL` | `REFERENCES product_variants(id) ON DELETE RESTRICT` | `variant_id: Optional[UUID]` |
+| `plan_id` | `UUID` | Yes | `NULL` | `REFERENCES plans(id) ON DELETE RESTRICT` | `plan_id: Optional[UUID]` |
+| `description` | `VARCHAR(500)` | No | — | Snapshot item description | `description: str` |
+| `quantity` | `NUMERIC(10, 2)` | No | `1.00` | `CHECK (quantity > 0)` | `quantity: Decimal` |
+| `unit_price` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (unit_price >= 0)` | `unit_price: Decimal` |
+| `discount_percentage` | `NUMERIC(5, 2)` | No | `0.00` | `CHECK (discount_percentage BETWEEN 0 AND 100)` | `discount_percentage: Decimal` |
+| `discount_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_amount >= 0)` | `discount_amount: Decimal` |
+| `tax_rate` | `NUMERIC(5, 2)` | No | `0.00` | `CHECK (tax_rate BETWEEN 0 AND 100)` | `tax_rate: Decimal` |
+| `tax_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_amount >= 0)` | `tax_amount: Decimal` |
+| `line_total` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (line_total >= 0)` | `line_total: Decimal` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | `created_at: datetime` |
+
+*Indexes & Constraints:*
+- `idx_invoice_lines_invoice_id ON invoice_lines(invoice_id)`
+- Mutual exclusivity check: `chk_invoice_line_item CHECK ((line_type = 'product' AND product_id IS NOT NULL AND plan_id IS NULL) OR (line_type = 'plan' AND plan_id IS NOT NULL AND product_id IS NULL AND variant_id IS NULL))`
+
+---
+
 ## Future data model targets (Upcoming phases)
 
 ### Identity and access
