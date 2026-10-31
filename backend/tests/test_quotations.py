@@ -421,3 +421,165 @@ async def test_expired_quotation_cannot_be_confirmed(
     conf_res = await admin_client.post(f"/api/v1/quotations/{quote_id}/confirm")
     assert conf_res.status_code == 400
     assert conf_res.json()["error"]["code"] == "EXPIRED_QUOTATION"
+
+
+# ---------------------------------------------------------------------------
+# SupabaseQuotationRepository create_quotation_atomic RPC Unit Tests
+# ---------------------------------------------------------------------------
+from unittest.mock import MagicMock
+from app.repositories.quotation_repository import SupabaseQuotationRepository
+from app.schemas.quotation import (
+    QuotationLineResponse,
+    QuotationLineType,
+    QuotationResponse,
+    QuotationStatus,
+)
+
+
+@pytest.mark.asyncio
+async def test_supabase_quotation_repository_rpc_success():
+    client = MagicMock()
+    repo = SupabaseQuotationRepository(client)
+
+    quote_id = uuid4()
+    cust_id = uuid4()
+    prod_id = uuid4()
+    now = datetime.now(timezone.utc)
+
+    sample_quotation = QuotationResponse(
+        id=quote_id,
+        quotation_number="QUOT-2026-00001",
+        customer_id=cust_id,
+        status=QuotationStatus.DRAFT,
+        currency="INR",
+        subtotal=Decimal("1000.00"),
+        discount_total=Decimal("100.00"),
+        tax_total=Decimal("162.00"),
+        total_amount=Decimal("1062.00"),
+        valid_until=date(2026, 12, 31),
+        notes="Test quote",
+        created_by=cust_id,
+        confirmed_at=None,
+        created_at=now,
+        updated_at=now,
+        lines=[
+            QuotationLineResponse(
+                id=uuid4(),
+                quotation_id=quote_id,
+                line_type=QuotationLineType.PRODUCT,
+                product_id=prod_id,
+                variant_id=None,
+                plan_id=None,
+                description="Test Line",
+                quantity=Decimal("1.00"),
+                unit_price=Decimal("1000.00"),
+                discount_percentage=Decimal("10.00"),
+                discount_amount=Decimal("100.00"),
+                tax_rate=Decimal("18.00"),
+                tax_amount=Decimal("162.00"),
+                line_total=Decimal("1062.00"),
+                created_at=now,
+            )
+        ],
+    )
+
+    mock_rpc_result = MagicMock()
+    mock_rpc_result.data = {
+        "id": str(quote_id),
+        "quotation_number": "QUOT-2026-00001",
+        "customer_id": str(cust_id),
+        "status": "draft",
+        "currency": "INR",
+        "subtotal": "1000.00",
+        "discount_total": "100.00",
+        "tax_total": "162.00",
+        "total_amount": "1062.00",
+        "valid_until": "2026-12-31",
+        "notes": "Test quote",
+        "created_by": str(cust_id),
+        "confirmed_at": None,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+    }
+    client.rpc.return_value.execute.return_value = mock_rpc_result
+
+    mock_lines_result = MagicMock()
+    mock_lines_result.data = [
+        {
+            "id": str(sample_quotation.lines[0].id),
+            "quotation_id": str(quote_id),
+            "line_type": "product",
+            "product_id": str(prod_id),
+            "variant_id": None,
+            "plan_id": None,
+            "line_number": 1,
+            "description": "Test Line",
+            "quantity": "1.00",
+            "unit_price": "1000.00",
+            "discount_percentage": "10.00",
+            "discount_amount": "100.00",
+            "tax_rate": "18.00",
+            "tax_amount": "162.00",
+            "line_total": "1062.00",
+            "created_at": now.isoformat(),
+        }
+    ]
+    client.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = mock_lines_result
+
+    result = await repo.create(sample_quotation)
+
+    client.rpc.assert_called_once()
+    fn_name, rpc_kwargs = client.rpc.call_args[0]
+    assert fn_name == "create_quotation_atomic"
+    assert "p_header" in rpc_kwargs
+    assert "p_lines" in rpc_kwargs
+
+    p_header = rpc_kwargs["p_header"]
+    assert p_header["id"] == str(quote_id)
+    assert p_header["quotation_number"] == "QUOT-2026-00001"
+    assert p_header["customer_id"] == str(cust_id)
+    assert p_header["subtotal"] == "1000.00"
+
+    p_lines = rpc_kwargs["p_lines"]
+    assert len(p_lines) == 1
+    assert p_lines[0]["product_id"] == str(prod_id)
+    assert p_lines[0]["line_number"] == 1
+    assert p_lines[0]["line_type"] == "product"
+
+    assert result.id == quote_id
+    assert result.status == QuotationStatus.DRAFT
+    assert len(result.lines) == 1
+    assert result.lines[0].line_total == Decimal("1062.00")
+
+
+@pytest.mark.asyncio
+async def test_supabase_quotation_repository_rpc_failure():
+    client = MagicMock()
+    repo = SupabaseQuotationRepository(client)
+
+    client.rpc.return_value.execute.side_effect = RuntimeError(
+        "PostgreSQL check constraint violation: chk_quotation_line_item"
+    )
+
+    quote = QuotationResponse(
+        id=uuid4(),
+        quotation_number="QUOT-2026-00002",
+        customer_id=uuid4(),
+        status=QuotationStatus.DRAFT,
+        currency="INR",
+        subtotal=Decimal("500.00"),
+        discount_total=Decimal("0.00"),
+        tax_total=Decimal("0.00"),
+        total_amount=Decimal("500.00"),
+        valid_until=None,
+        notes=None,
+        created_by=None,
+        confirmed_at=None,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        lines=[],
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await repo.create(quote)
+    assert "chk_quotation_line_item" in str(exc_info.value)
