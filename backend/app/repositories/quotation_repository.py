@@ -196,6 +196,8 @@ class SupabaseQuotationRepository:
                     {
                         "id": str(line.id),
                         "quotation_id": str(quotation.id),
+                        "line_type": line.line_type.value,
+                        "line_number": idx + 1,
                         "product_id": str(line.product_id) if line.product_id else None,
                         "variant_id": str(line.variant_id) if line.variant_id else None,
                         "plan_id": str(line.plan_id) if line.plan_id else None,
@@ -208,11 +210,16 @@ class SupabaseQuotationRepository:
                         "tax_amount": str(line.tax_amount),
                         "line_total": str(line.line_total),
                     }
-                    for line in quotation.lines
+                    for idx, line in enumerate(quotation.lines)
                 ]
                 self.client.table("quotation_lines").insert(lines_payload).execute()
         except Exception as exc:
-            # Atomicity rollback: prevent orphan quotation header
+            # COMPENSATING DELETION PATTERN:
+            # Note: This is an application-level compensating action, NOT genuine PostgreSQL ACID
+            # transaction atomicity. If this backend process crashes or network disconnects between
+            # the header insert and line insert, an orphaned header remains. For genuine PostgreSQL
+            # atomicity, migration 20261031000002_quotations.sql can provide a stored procedure RPC
+            # (e.g. create_quotation_with_lines()) or PostgREST single-request nested inserts.
             try:
                 self.client.table("quotations").delete().eq("id", str(quotation.id)).execute()
             except Exception:

@@ -14,7 +14,7 @@ Verifies:
 import asyncio
 import os
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -120,35 +120,39 @@ class TestLiveQuotationDatabaseIntegration:
         cust_b = live_clients["cust_b"]
         cust_a_id = live_clients["cust_a_id"]
 
-        # 1. Seed test product and plan in live DB
-        p_res = await admin.post(
-            "/api/v1/products",
-            json={
-                "name": f"Live Quote Prod {uuid4().hex[:6]}",
-                "sales_price": "1200.00",
-                "cost_price": "300.00",
-                "currency": "INR",
-                "is_active": True,
-            },
-        )
-        assert p_res.status_code == 201
-        prod_id = p_res.json()["id"]
-
-        pl_res = await admin.post(
-            "/api/v1/plans",
-            json={
-                "name": f"Live Quote Plan {uuid4().hex[:6]}",
-                "price": "3500.00",
-                "currency": "INR",
-                "billing_frequency": "monthly",
-                "status": "active",
-            },
-        )
-        assert pl_res.status_code == 201
-        plan_id = pl_res.json()["id"]
-
+        # Pre-initialize variables for safe cleanup in case setup fails partway
+        prod_id = None
+        plan_id = None
         quote_id = None
+
         try:
+            # 1. Seed test product and plan in live DB
+            p_res = await admin.post(
+                "/api/v1/products",
+                json={
+                    "name": f"Live Quote Prod {uuid4().hex[:6]}",
+                    "sales_price": "1200.00",
+                    "cost_price": "300.00",
+                    "currency": "INR",
+                    "is_active": True,
+                },
+            )
+            assert p_res.status_code == 201
+            prod_id = p_res.json()["id"]
+
+            pl_res = await admin.post(
+                "/api/v1/plans",
+                json={
+                    "name": f"Live Quote Plan {uuid4().hex[:6]}",
+                    "price": "3500.00",
+                    "currency": "INR",
+                    "billing_frequency": "monthly",
+                    "status": "active",
+                },
+            )
+            assert pl_res.status_code == 201
+            plan_id = pl_res.json()["id"]
+
             # 2. Create quotation with multiple lines (product + plan)
             create_res = await cust_a.post(
                 "/api/v1/quotations",
@@ -183,7 +187,7 @@ class TestLiveQuotationDatabaseIntegration:
             b_conf = await cust_b.post(f"/api/v1/quotations/{quote_id}/confirm")
             assert b_conf.status_code == 404
 
-            # 4. Fresh repository read verification
+            # 4. Fresh repository read verification with proper UUID conversion
             settings = get_settings()
             from supabase import create_client
 
@@ -192,41 +196,52 @@ class TestLiveQuotationDatabaseIntegration:
                 settings.supabase_service_role_key or settings.supabase_anon_key,
             )
             fresh_repo = SupabaseQuotationRepository(fresh_sb)
-            fresh_read = await fresh_repo.get(uuid4().from_hex(quote_id.replace("-", "")))
+            parsed_uuid = UUID(quote_id)
+            fresh_read = await fresh_repo.get(parsed_uuid)
             assert fresh_read is not None
-            assert fresh_read.id == uuid4().from_hex(quote_id.replace("-", ""))
+            assert fresh_read.id == parsed_uuid
             assert len(fresh_read.lines) == 2
 
-            # 5. Successful confirmation
-            conf_res = await cust_a.post(f"/api/v1/quotations/{quote_id}/confirm")
-            assert conf_res.status_code == 200
-            assert conf_res.json()["status"] == "confirmed"
-            assert conf_res.json()["confirmed_at"] is not None
+            # 5. Genuinely concurrent confirmation race condition test (atomic conditional transition)
+            # Launch simultaneous confirmation requests while the quotation is STILL in draft.
+            # Exactly one request must succeed (200 OK); the remaining two must receive 400 Bad Request
+            # (INVALID_STATUS_TRANSITION) due to row-level atomic conditional locking (status = 'draft').
+            concurrent_results = await asyncio.gather(
+                cust_a.post(f"/api/v1/quotations/{quote_id}/confirm"),
+                cust_a.post(f"/api/v1/quotations/{quote_id}/confirm"),
+                cust_a.post(f"/api/v1/quotations/{quote_id}/confirm"),
+            )
+            status_codes = [r.status_code for r in concurrent_results]
+            assert status_codes.count(200) == 1, f"Expected exactly one 200 OK, got: {status_codes}"
+            assert status_codes.count(400) == 2, f"Expected exactly two 400 Bad Request, got: {status_codes}"
 
-            # 6. Duplicate confirmation rejected
+            success_res = next(r for r in concurrent_results if r.status_code == 200)
+            assert success_res.json()["status"] == "confirmed"
+            assert success_res.json()["confirmed_at"] is not None
+
+            for r in concurrent_results:
+                if r.status_code == 400:
+                    assert r.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
+
+            # 6. Duplicate sequential confirmation rejected
             dup_res = await cust_a.post(f"/api/v1/quotations/{quote_id}/confirm")
             assert dup_res.status_code == 400
             assert dup_res.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
 
-            # 7. Concurrent confirmation simulation (atomic conditional state transition)
-            tasks = [cust_a.post(f"/api/v1/quotations/{quote_id}/confirm") for _ in range(3)]
-            results = await asyncio.gather(*tasks)
-            # All concurrent calls on an already-confirmed quotation must be rejected with 400
-            for r in results:
-                assert r.status_code == 400
-
         finally:
-            # Non-destructive test data cleanup
+            # Non-destructive test data cleanup (safe even if setup fails partway)
             if quote_id:
                 try:
                     self.sb_client.table("quotations").delete().eq("id", quote_id).execute()
                 except Exception:
                     pass
-            try:
-                self.sb_client.table("products").delete().eq("id", prod_id).execute()
-            except Exception:
-                pass
-            try:
-                self.sb_client.table("plans").delete().eq("id", plan_id).execute()
-            except Exception:
-                pass
+            if prod_id:
+                try:
+                    self.sb_client.table("products").delete().eq("id", prod_id).execute()
+                except Exception:
+                    pass
+            if plan_id:
+                try:
+                    self.sb_client.table("plans").delete().eq("id", plan_id).execute()
+                except Exception:
+                    pass
