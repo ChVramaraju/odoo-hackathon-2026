@@ -1,34 +1,39 @@
-# Contributing to the Odoo Hackathon Repository
+# Contributing to Brightloop
 
-## Before making changes
+## Read first
 
-Read [README.md](README.md), [AI_RULES.md](AI_RULES.md), [TEAM_WORKFLOW.md](TEAM_WORKFLOW.md) and assigned contracts. Confirm the official problem, branch, task owner and acceptance criteria.
+Every contributor must follow PROJECT_STANDARD.md. Related references: ARCHITECTURE.md, API_CONTRACTS.md, DATABASE_GUIDE.md, TEAM_WORKFLOW.md, AI_RULES.md, and DOMAIN_MODULES.md.
 
-## Branch and change policy
+## Required stack
 
-Use your own GitHub identity and assigned feature branch. Keep commits focused, meaningful and attributable; never fabricate commits. Coordinate before editing another owner's schema, API or architecture. Do not force-push shared branches, rewrite history or commit directly to `main` without lead approval.
+React + TypeScript + Vite; Tailwind CSS + shadcn/ui; React Hook Form + Zod; TanStack Query; Python + FastAPI + Pydantic; Supabase PostgreSQL; Supabase Auth; SQL migrations; Pytest and Vitest.
 
-## Definition of done
+Do not add another stack or data store without a reviewed decision in DECISIONS.md. Official organizer constraints take precedence.
 
-- Code addresses a confirmed requirement and follows current architecture.
-- The critical path is implemented, integrated and tested as appropriate.
-- API, schema, environment and setup changes are documented.
-- Failure states and authorization are handled where relevant.
-- Real test commands and results are reported; unknown/untested items labeled honestly.
-- No secrets, private data, generated junk or unrelated churn.
+## Before coding
 
-## PR description
+1. Check branch and working tree: git status, git branch --show-current.
+2. Confirm task, owner, acceptance criteria and contract dependencies.
+3. Read current API/schema docs; do not invent routes, fields or enum values.
+4. Preserve local changes and teammates' work.
 
-```text
-Requirement:
-Owner and base branch:
-Summary:
-Files changed:
-API or database contract changes:
-Tests run and observed results:
-Screenshots / demo path:
-Known limitations:
-Reviewers:
-```
+## Code and data rules
 
-Ensure the final project works from one submitted branch even when history includes separate development branches.
+- Keep business logic in backend domain services.
+- Validate requests in FastAPI/Pydantic and enforce authorization server-side.
+- Use Supabase PostgreSQL with reviewed migrations.
+- Use Decimal/NUMERIC for financial amounts.
+- Make recurring invoice generation idempotent.
+- Do not expose service-role keys in browser code.
+- AI tools must be allowlisted and independently permission-checked.
+
+## Pull requests
+
+Include:
+- Requirement and user-visible behavior
+- Files changed
+- API/schema/environment impact
+- Tests actually run and results
+- Known gaps and next owner
+
+Do not claim tests or functionality passed unless verified. Avoid unrelated changes and breaking contract changes without team agreement.
