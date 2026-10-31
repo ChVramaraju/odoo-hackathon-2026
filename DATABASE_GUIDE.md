@@ -144,6 +144,93 @@ All four catalog tables have Row Level Security enabled (`ALTER TABLE ... ENABLE
 
 ---
 
+# Quotations Schema (`20261031000002_quotations.sql`)
+
+Migration `20261031000002_quotations.sql` establishes the sales quotation lifecycle, providing immutable pricing snapshots, server-verifiable financial totals, cascade integrity, and granular ownership/staff RLS policies.
+
+### 5. `quotations`
+Header record for a customer quotation, establishing business reference, currency, lifecycle status, validity dates, and aggregated totals.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Description / Mapping |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | Unique quotation UUID |
+| `quotation_number` | `VARCHAR(50)` | No | `generate_quotation_number()` | `UNIQUE`, non-empty | Human-readable business reference (e.g. `QUOT-2026-00001`) |
+| `customer_id` | `UUID` | No | — | `REFERENCES auth.users(id) ON DELETE RESTRICT` | Customer reference (ownership anchor) |
+| `plan_id` | `UUID` | Yes | `NULL` | `REFERENCES plans(id) ON DELETE RESTRICT` | Optional associated subscription plan |
+| `status` | `VARCHAR(20)` | No | `'draft'` | `CHECK (status IN ('draft', 'sent', 'confirmed', 'cancelled'))` | Lifecycle state |
+| `currency` | `VARCHAR(3)` | No | `'INR'` | `CHECK (length(currency) = 3)` | Currency ISO code (default INR) |
+| `subtotal` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (subtotal >= 0)` | Aggregated gross sum of lines |
+| `discount_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (discount_amount >= 0)` | Total line discounts |
+| `tax_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (tax_amount >= 0)` | Total line taxes |
+| `total_amount` | `NUMERIC(12, 2)` | No | `0.00` | `CHECK (total_amount >= 0)` | Net payable amount (subtotal - discount + tax) |
+| `valid_until` | `DATE` | Yes | `NULL` | — | Quotation validity expiration date |
+| `confirmed_at` | `TIMESTAMPTZ` | Yes | `NULL` | `CHECK (confirmed_at >= created_at)` | Timestamp when confirmed |
+| `cancelled_at` | `TIMESTAMPTZ` | Yes | `NULL` | `CHECK (cancelled_at >= created_at)` | Timestamp when cancelled |
+| `notes` | `TEXT` | Yes | `NULL` | — | Customer-facing terms & conditions |
+| `internal_notes` | `TEXT` | Yes | `NULL` | — | Staff-only internal comments (masked from customers) |
+| `created_by` | `UUID` | Yes | `NULL` | `REFERENCES auth.users(id) ON DELETE SET NULL` | Originating staff/customer ID |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | Creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | Last modification timestamp |
+
+*Triggers & Indexes:*
+- Index: `idx_quotations_customer_id ON quotations (customer_id)`
+- Index: `idx_quotations_status ON quotations (status)`
+- Index: `idx_quotations_valid_until ON quotations (valid_until)`
+- Index: `idx_quotations_created_by ON quotations (created_by)`
+- Index: `idx_quotations_plan_id ON quotations (plan_id)`
+- Index: `idx_quotations_created_at ON quotations (created_at DESC)`
+- Trigger: `trg_quotations_updated_at BEFORE UPDATE` calling `update_updated_at_column()`
+- Trigger: `trg_quotations_status_transition BEFORE UPDATE` auto-populating `confirmed_at` / `cancelled_at`
+
+---
+
+### 6. `quotation_lines`
+Individual itemized detail rows snapshotting catalog products/variants/plans with agreed unit prices and discount/tax calculations.
+
+| Database Column | Data Type | Nullable | Default | Constraints & Rules | Description / Mapping |
+|---|---|---|---|---|---|
+| `id` | `UUID` | No | `gen_random_uuid()` | `PRIMARY KEY` | Line item UUID |
+| `quotation_id` | `UUID` | No | — | `REFERENCES quotations(id) ON DELETE CASCADE` | Parent quotation reference |
+| `product_id` | `UUID` | Yes | `NULL` | `REFERENCES products(id) ON DELETE RESTRICT` | Referenced product |
+| `product_variant_id`| `UUID` | Yes | `NULL` | `REFERENCES product_variants(id) ON DELETE RESTRICT`| Referenced product variant |
+| `plan_id` | `UUID` | Yes | `NULL` | `REFERENCES plans(id) ON DELETE RESTRICT` | Referenced plan |
+| `line_number` | `INTEGER` | No | `1` | `CHECK (line_number >= 1)` | Sequence / display order |
+| `description` | `TEXT` | No | — | `CHECK (trim(description) <> '')` | Snapshot description at quote creation |
+| `quantity` | `NUMERIC(10, 2)`| No | `1.00` | `CHECK (quantity > 0)` | Line item quantity |
+| `unit_price` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (unit_price >= 0)` | Snapshot agreed unit price |
+| `discount_percent`| `NUMERIC(5, 2)` | No | `0.00` | `CHECK (discount_percent BETWEEN 0 AND 100)` | Line discount percentage |
+| `discount_amount` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (discount_amount >= 0)` | Line discount amount |
+| `tax_rate` | `NUMERIC(5, 2)` | No | `0.00` | `CHECK (tax_rate BETWEEN 0 AND 100)` | Applicable tax rate percentage |
+| `tax_amount` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (tax_amount >= 0)` | Calculated tax amount |
+| `subtotal` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (subtotal >= 0)` | Gross amount (`quantity * unit_price`) |
+| `total_amount` | `NUMERIC(12, 2)`| No | `0.00` | `CHECK (total_amount >= 0)` | Line total (`subtotal - discount + tax`) |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL` | Creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | `NOT NULL`, auto-updated by trigger | Last modification timestamp |
+
+*Catalog Deletion Protection & Automated Math Integrity:*
+- `ON DELETE RESTRICT` on `product_id`, `product_variant_id`, and `plan_id` prevents deleting catalog entries that have been quoted, protecting financial audit history.
+- `trg_quotation_lines_calculate BEFORE INSERT OR UPDATE`: Automatically computes and enforces `subtotal`, `discount_amount`, `tax_amount`, and `total_amount`.
+- `trg_quotation_lines_sync_totals AFTER INSERT OR UPDATE OR DELETE`: Automatically synchronizes aggregated subtotals, discounts, taxes, and total amounts to the parent `quotations` header.
+
+---
+
+### Quotations Row Level Security (RLS) Policy Summary
+
+| Table | Policy Name | Command | Target Role | Using / Check Condition |
+|---|---|---|---|---|
+| `quotations` | "Allow staff and admin to view all quotations" | `SELECT` | `authenticated` | `is_staff_or_admin()` |
+| `quotations` | "Allow customers to view their own quotations" | `SELECT` | `authenticated` | `customer_id = auth.uid() AND (status IN ('sent', 'confirmed', 'cancelled') OR created_by = auth.uid())` |
+| `quotations` | "Allow staff and admin to insert quotations" | `INSERT` | `authenticated` | `is_staff_or_admin()` |
+| `quotations` | "Allow customers to create draft quotations" | `INSERT` | `authenticated` | `customer_id = auth.uid() AND status = 'draft'` |
+| `quotations` | "Allow staff and admin to update quotations" | `UPDATE` | `authenticated` | `is_staff_or_admin()` |
+| `quotations` | "Allow customers to update their own quotations" | `UPDATE` | `authenticated` | `customer_id = auth.uid()` on own drafts or confirming sent quotes |
+| `quotations` | "Allow admin to delete draft or cancelled quotations" | `DELETE` | `authenticated` | `is_admin() AND status IN ('draft', 'cancelled')` |
+| `quotation_lines` | "Allow callers to view lines of accessible quotations" | `SELECT` | `authenticated` | `EXISTS (SELECT 1 FROM quotations q WHERE q.id = quotation_lines.quotation_id)` |
+| `quotation_lines` | "Allow staff and admin to insert/update/delete lines" | `INSERT`, `UPDATE`, `DELETE` | `authenticated` | `is_staff_or_admin() AND parent status = 'draft'` |
+| `quotation_lines` | "Allow customers to insert/update/delete lines on own draft" | `INSERT`, `UPDATE`, `DELETE` | `authenticated` | Customer owns parent quotation AND parent `status = 'draft'` |
+
+---
+
 ## Future data model targets (Upcoming phases)
 
 ### Identity and access
@@ -210,6 +297,7 @@ All four catalog tables have Row Level Security enabled (`ALTER TABLE ... ENABLE
 ## Verification checklist
 
 - [x] Versioned SQL migration `20261031000001_catalog.sql` created and validated locally
+- [x] Versioned SQL migration `20261031000002_quotations.sql` created and validated locally (quotations, quotation_lines)
 - [ ] Fresh development database setup applies all migrations in order
 - [ ] Duplicate recurring invoice is rejected (Upcoming Phase)
 - [x] Foreign-key and check constraints reject invalid data in catalog schema
