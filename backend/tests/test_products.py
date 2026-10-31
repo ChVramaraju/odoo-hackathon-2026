@@ -262,3 +262,35 @@ def test_supabase_product_repository_row_to_variant_mapping() -> None:
     assert variant.price_adjustment == Decimal("35.50")
     assert variant.sku == "BW-10G"
     assert variant.is_active is True
+
+
+def test_supabase_product_repository_internal_notes_mapping() -> None:
+    from decimal import Decimal
+    from app.repositories.product_repository import SupabaseProductRepository
+
+    repo = SupabaseProductRepository(supabase_client=None)
+    fake_id = str(uuid4())
+    mock_db_row = {
+        "id": fake_id,
+        "name": "Database Mapping Test",
+        "product_type": "service",
+        "sales_price": "49.99",
+        "cost_price": "15.00",
+        "currency": "INR",
+        "internal_notes": "Internal warehouse note",
+        "is_active": True,
+        "created_at": "2026-10-31T10:00:00+00:00",
+        "updated_at": "2026-10-31T10:00:00+00:00",
+    }
+    product = repo._row_to_product(mock_db_row)
+    assert product.name == "Database Mapping Test"
+    assert product.notes == "Internal warehouse note"
+    assert product.sales_price == Decimal("49.99")
+    assert product.currency == "INR"
+
+
+@pytest.mark.asyncio
+async def test_staff_can_list_products(staff_client: AsyncClient) -> None:
+    res = await staff_client.get("/api/v1/products")
+    assert res.status_code == 200
+    assert "items" in res.json()

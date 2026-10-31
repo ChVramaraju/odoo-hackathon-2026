@@ -7,6 +7,8 @@ Integrates with Supabase Auth:
 - Extracts identity (user ID) and effective role (admin, staff, customer).
 - Enforces role-based permissions via require_role.
 - Returns agreed structured error responses on 401 Unauthorized or 403 Forbidden.
+- Security enforcement: Never decodes unverified JWT payloads without signature check.
+- Security enforcement: Only server-controlled app_metadata is trusted for roles; user_metadata is ignored.
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ async def get_current_user(
     token = parts[1]
     settings = get_settings()
 
-    # If Supabase is configured, verify token via Supabase Auth
+    # If Supabase is configured, verify token via Supabase client
     if settings.supabase_url and settings.supabase_anon_key:
         try:
             from supabase import create_client
@@ -68,11 +70,10 @@ async def get_current_user(
                 raise ValueError("Invalid user token")
             
             sb_user = response.user
-            # Security Rule: Privileged roles (admin, staff) MUST come from server-managed app_metadata.
-            # user_metadata is user-editable and must never grant admin or staff permissions.
+            # Extract role ONLY from trusted, server-assigned app_metadata.
+            # user_metadata is user-editable and must NEVER be trusted for privileged roles.
             app_meta = sb_user.app_metadata or {}
-            raw_role = app_meta.get("role")
-            role = raw_role if raw_role in ("admin", "staff") else "customer"
+            role = app_meta.get("role") or "customer"
 
             return User(
                 id=UUID(sb_user.id),
@@ -87,12 +88,12 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
             ) from exc
 
-    # Security Rule: A JWT payload decoded without signature verification must NEVER be accepted as proof of identity or role.
-    # Insecure base64 fallback decoding is completely rejected.
-    # Automated unit tests must use explicit FastAPI dependency overrides: app.dependency_overrides[get_current_user] = ...
+    # Unverified JWT decoding must NEVER be accepted as proof of identity or role.
+    # Automated tests must use explicit FastAPI dependency overrides (app.dependency_overrides[get_current_user]).
+    # Missing credentials do not silently activate insecure authentication.
     raise AppError(
         code="UNAUTHORIZED",
-        message="Authentication token verification failed. Insecure unverified JWT decoding is rejected.",
+        message="Invalid or unverified authentication credentials.",
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
 
@@ -113,4 +114,3 @@ def require_role(allowed_roles: list[str]) -> Callable[[User], User]:
         return current_user
 
     return role_checker
-

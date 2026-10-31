@@ -4,7 +4,7 @@ Brightloop — Shared Test Fixtures.
 Configures:
 - AsyncClient with ASGITransport.
 - In-memory repository isolation per test.
-- Authenticated client fixtures for admin and customer roles.
+- Authenticated client fixtures for admin, staff, and customer roles.
 """
 
 from uuid import uuid4
@@ -30,6 +30,16 @@ def admin_user() -> User:
         id=uuid4(),
         email="admin@brightloop.io",
         role="admin",
+        is_active=True,
+    )
+
+
+@pytest.fixture
+def staff_user() -> User:
+    return User(
+        id=uuid4(),
+        email="staff@brightloop.io",
+        role="staff",
         is_active=True,
     )
 
@@ -68,6 +78,21 @@ async def admin_client(admin_user: User) -> AsyncClient:
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def staff_client(staff_user: User) -> AsyncClient:
+    """Client authenticated with 'staff' role."""
+    app = create_app()
+    plan_repo = InMemoryPlanRepository()
+    prod_repo = InMemoryProductRepository()
+    app.dependency_overrides[get_plan_repository] = lambda: plan_repo
+    app.dependency_overrides[get_product_repository] = lambda: prod_repo
+    app.dependency_overrides[get_current_user] = lambda: staff_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
