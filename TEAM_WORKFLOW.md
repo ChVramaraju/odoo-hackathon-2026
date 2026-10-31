@@ -1,24 +1,24 @@
-# Four-Person Development and Git Workflow
+# Team Workflow and Branch Rules
 
-## Branch ownership
+## Branches
 
-| Branch | Purpose |
+| Branch | Owner / purpose |
 |---|---|
-| `main` | Stable evaluator-facing baseline, intended final submission |
-| `integration` | Optional integration/testing |
-| `feature/lead-backend` | Lead: APIs, backend and architecture |
-| `feature/sanjeeth-frontend` | Sanjeeth: UI, deployment and frontend integration |
-| `feature/jashwanth-database` | Jashwanth: schema, migrations and integrity |
-| `feature/nihal-modules` | Nihal: assigned modules and testing |
+| `main` | Stable integration and intended final submission branch, subject to organizer rules |
+| `integration` | Shared integration and end-to-end testing |
+| `feature/lead-backend` | Ramaraju: FastAPI, domain services, API contracts, integration |
+| `feature/sanjeeth-frontend` | Sanjeeth: React UI and API integration |
+| `feature/jashwanth-database` | Jashwanth: Supabase schema, migrations, constraints and RLS |
+| `feature/nihal-modules` | Nihal: agreed supporting modules and QA |
+| `docs/supabase-stack-and-api-audit` | Documentation/audit work; keep synchronized with the shared standard |
 
-On 30 October 2026, all six remote branches were verified at commit `7e8094069d6bdc3e61a83e0e17404a46733fdac8`. This is a point-in-time fact, not a guarantee that future commits remain synchronized. Teammates' local Antigravity clones were not checked. Each owner must fetch, inspect local changes, and fast-forward only where safe; never overwrite or rewrite their work.
+## Required reading
 
-## Start-of-day protocol
+Every contributor and AI assistant must read `PROJECT_STANDARD.md`, `README.md`, `ARCHITECTURE.md`, `API_CONTRACTS.md`, `DATABASE_GUIDE.md`, and `AI_RULES.md` before changing shared interfaces.
 
-Each teammate uses a distinct GitHub identity and opens the **repository root** in Antigravity. Confirm branch, fetch updates and check for uncommitted work. Read [AI_RULES.md](AI_RULES.md) and assigned contracts.
+## Start safely
 
-## Updating an existing local branch safely
-
+Run in PowerShell:
 ```powershell
 git status
 git branch --show-current
@@ -26,33 +26,39 @@ git fetch origin
 git status -sb
 ```
 
-If the working tree is clean and the current branch tracks its intended remote, use `git pull --ff-only`. If Git refuses, stop: preserve local commits and consult the team lead before merging or rebasing. Do not use `reset --hard`, force pushes, or blind branch replacements.
+If there are local changes, preserve them. If a pull cannot fast-forward safely, stop and ask the lead. Never run `git reset --hard`, destructive clean commands, force-pushes, or branch deletion to fix a conflict.
 
-## Suggested eight-hour schedule (not official rules)
+## Contract-first implementation
 
-| Time (IST) | Goal |
-|---|---|
-| 09:00–09:30 | Select official challenge and MVP |
-| 09:30–10:15 | Agree stack, entities, contracts and ownership |
-| 10:15–13:00 | Parallel implementation; first end-to-end integration |
-| 13:00–15:00 | Complete essential features and error handling |
-| 15:00–16:00 | Fresh-start verification and demo rehearsal |
-| 16:00–17:00 | Merge final branch, record video and submit with buffer |
+1. Agree entity names, states, request/response schemas, role permissions, and acceptance tests.
+2. Database owner prepares a migration; backend owner reviews data access and business constraints.
+3. Backend publishes working API schemas/OpenAPI examples.
+4. Frontend integrates against those exact schemas; do not create parallel mock contracts.
+5. Supporting modules consume shared services and documented interfaces.
+6. Integrate continuously and run the end-to-end flow before adding more features.
 
-## Task and review discipline
+## Pull request checklist
 
-Every work item has one owner, requirement reference, acceptance criteria and tests. Commit meaningful progress, not empty commits. Use focused PRs into `integration` or directly into `main` as appropriate. Describe tests actually run, schema/contract changes, risks and screenshots where relevant. Never merge broken work to simulate contribution.
+- [ ] Requirement and owner identified
+- [ ] Scope is focused
+- [ ] API/schema changes documented and communicated
+- [ ] Authorization and customer ownership checked
+- [ ] Tests run and actual results stated
+- [ ] No secrets, real customer data, or generated local files committed
+- [ ] No false claims of completion or performance
+- [ ] Reviewer approves before merge
 
-## Final single-branch submission
+## Suggested MVP sequence
 
-1. Confirm the branch accepted by organizers (team intent: `main`).
-2. Bring all approved features together through reviewed merges, preserving individual authorship.
-3. Verify installation, application startup, dynamic database-backed behavior and known limitations.
-4. Ensure the public video and code link are accessible.
-5. Lead submits required links according to official rules.
+1. Environment, schema migrations, token verification and first API contract.
+2. Product/variant/plan CRUD.
+3. Quotation and subscription lifecycle.
+4. Idempotent due-billing and invoice creation.
+5. Payment recording and invoice balance.
+6. Role-scoped dashboard and customer portal.
+7. AI advisor/read-only assistant and differentiators only after core workflow is stable.
+8. Clean setup, end-to-end tests, demo rehearsal and submission checks.
 
-Development branches may remain for history but must not be needed to reconstruct the submitted application. Never reset or force-push teammates' branches.
+## Submission
 
-## Handoffs
-
-Post blockers with owner, affected requirement, reproduction and decision needed. Record meaningful choices in [DECISIONS.md](DECISIONS.md), actual verification in [EVALUATOR_LOG.md](EVALUATOR_LOG.md). AI tools must not assume teammates share private chat context.
+Confirm official rules, final branch, video visibility, deadline, and repository visibility with organizer materials. Keep a single coherent final solution branch, but do not merge untested or broken work just to show activity. Preserve attributable contributions and branch history.
