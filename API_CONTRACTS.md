@@ -433,7 +433,7 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
   - Cannot exceed outstanding invoice balance (`OVERPAYMENT_NOT_ALLOWED`).
   - Invoice balance decreases by exact payment amount: `new_balance = balance - amount`.
   - When `new_balance == 0.00`, invoice status transitions to `PAID` with `paid_at` recorded.
-  - Payments cannot be recorded against cancelled invoices.
+  - Payments cannot be recorded against unconfirmed draft or cancelled invoices.
   - Payment currency must match invoice currency.
 - **Idempotency (`idempotency_key`):**
   - Unique per client payment attempt.
