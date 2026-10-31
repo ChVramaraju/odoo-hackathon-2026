@@ -99,6 +99,15 @@ class SupabasePaymentRepository:
 
     def __init__(self, client) -> None:
         self.client = client
+        self._fallback = InMemoryPaymentRepository()
+
+    def _is_missing_table(self, exc: Exception) -> bool:
+        err = str(exc)
+        return (
+            ("PGRST205" in err or "Could not find the table" in err)
+            and os.getenv("APP_ENV") != "production"
+            and os.getenv("REQUIRE_PERSISTENT_STORAGE") != "true"
+        )
 
     def _row_to_payment(self, row: dict) -> PaymentResponse:
         raw_pdate = row.get("payment_date")
@@ -210,6 +219,10 @@ class SupabasePaymentRepository:
                     status_code=404,
                 ) from exc
 
+            # Fallback to in-memory store in dev when payments table is not migrated
+            if self._is_missing_table(exc):
+                return await self._fallback.create(payment)
+
             # Fallback to direct payments table insert if RPC is not present
             if "PGRST202" in err_msg or "Could not find the function" in err_msg:
                 try:
@@ -222,6 +235,8 @@ class SupabasePaymentRepository:
                         return self._row_to_payment(insert_res.data[0])
                     return payment
                 except Exception as insert_exc:
+                    if self._is_missing_table(insert_exc):
+                        return await self._fallback.create(payment)
                     ins_msg = str(insert_exc)
                     if "exceeds invoice total amount" in ins_msg or "check_violation" in ins_msg:
                         raise AppError(
@@ -234,16 +249,26 @@ class SupabasePaymentRepository:
             raise exc
 
     async def get(self, id: UUID) -> Optional[PaymentResponse]:
-        res = self.client.table("payments").select("*").eq("id", str(id)).execute()
-        if not res.data:
-            return None
-        return self._row_to_payment(res.data[0])
+        try:
+            res = self.client.table("payments").select("*").eq("id", str(id)).execute()
+            if not res.data:
+                return await self._fallback.get(id) if os.getenv("APP_ENV") != "production" else None
+            return self._row_to_payment(res.data[0])
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get(id)
+            raise
 
     async def get_by_idempotency_key(self, key: str) -> Optional[PaymentResponse]:
-        res = self.client.table("payments").select("*").eq("idempotency_key", key).limit(1).execute()
-        if not res.data:
-            return None
-        return self._row_to_payment(res.data[0])
+        try:
+            res = self.client.table("payments").select("*").eq("idempotency_key", key).limit(1).execute()
+            if not res.data:
+                return await self._fallback.get_by_idempotency_key(key) if os.getenv("APP_ENV") != "production" else None
+            return self._row_to_payment(res.data[0])
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get_by_idempotency_key(key)
+            raise
 
     async def list(
         self,
@@ -253,23 +278,33 @@ class SupabasePaymentRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[PaymentResponse], int]:
-        query = self.client.table("payments").select("*", count="exact")
-        if customer_id is not None:
-            query = query.eq("customer_id", str(customer_id))
-        if invoice_id is not None:
-            query = query.eq("invoice_id", str(invoice_id))
-        if status is not None:
-            query = query.eq("payment_status", status)
+        try:
+            query = self.client.table("payments").select("*", count="exact")
+            if customer_id is not None:
+                query = query.eq("customer_id", str(customer_id))
+            if invoice_id is not None:
+                query = query.eq("invoice_id", str(invoice_id))
+            if status is not None:
+                query = query.eq("payment_status", status)
 
-        offset = (page - 1) * page_size
-        res = query.order("payment_date", desc=True).range(offset, offset + page_size - 1).execute()
-        items = [self._row_to_payment(r) for r in res.data]
-        total = res.count if res.count is not None else len(items)
-        return items, total
+            offset = (page - 1) * page_size
+            res = query.order("payment_date", desc=True).range(offset, offset + page_size - 1).execute()
+            items = [self._row_to_payment(r) for r in res.data]
+            total = res.count if res.count is not None else len(items)
+            return items, total
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.list(customer_id, invoice_id, status, page, page_size)
+            raise
 
     async def delete(self, id: UUID) -> bool:
-        res = self.client.table("payments").delete().eq("id", str(id)).execute()
-        return bool(res.data)
+        try:
+            res = self.client.table("payments").delete().eq("id", str(id)).execute()
+            return bool(res.data)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.delete(id)
+            raise
 
 
 def get_payment_repository() -> PaymentRepositoryProtocol:

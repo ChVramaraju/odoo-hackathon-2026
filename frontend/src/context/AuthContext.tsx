@@ -153,6 +153,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
           apiClient.setToken(session.access_token);
           setIsEvaluatorMode(false);
           setIsRealAuth(true);
+          apiClient.setMockMode(false);
           try {
             sessionStorage.removeItem('brightloop_preview_role');
           } catch {
@@ -187,6 +188,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
         apiClient.setToken(session.access_token);
         setIsEvaluatorMode(false);
         setIsRealAuth(true);
+        apiClient.setMockMode(false);
         try {
           sessionStorage.removeItem('brightloop_preview_role');
         } catch {
@@ -224,6 +226,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
 
     setIsEvaluatorMode(true);
     setIsRealAuth(false);
+    apiClient.setMockMode(true);
     setRole(evalRole);
     try {
       sessionStorage.setItem('brightloop_preview_role', evalRole);
@@ -305,6 +308,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       // Clear evaluator preview override on real login
       setIsEvaluatorMode(false);
       setIsRealAuth(true);
+      apiClient.setMockMode(false);
       try {
         sessionStorage.removeItem('brightloop_preview_role');
       } catch {
@@ -339,6 +343,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
     } finally {
       setIsEvaluatorMode(false);
       setIsRealAuth(false);
+      apiClient.setMockMode(null);
       try {
         sessionStorage.removeItem('brightloop_preview_role');
       } catch {

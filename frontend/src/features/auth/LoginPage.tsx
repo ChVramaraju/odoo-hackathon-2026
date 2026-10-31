@@ -57,6 +57,7 @@ export const LoginPage: React.FC = () => {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -211,6 +212,52 @@ export const LoginPage: React.FC = () => {
               <span>Sign In to Brightloop</span>
               <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
+
+            {/* Live Supabase Dev Credentials Quick-Fill */}
+            <div className="pt-3 border-t border-surface-border/40 text-[11px] text-surface-textMuted space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-emerald-400">Live Supabase Test Accounts</span>
+                <span className="text-[10px] text-surface-subtle font-mono">Pass: Brightloop2026!</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1 text-[11px] font-mono">
+                <div
+                  role="presentation"
+                  onClick={() => {
+                    setValue('email', 'elena.vance@brightloop.io', { shouldValidate: true });
+                    setValue('password', 'Brightloop2026!', { shouldValidate: true });
+                  }}
+                  className="cursor-pointer text-left px-2 py-1 rounded bg-forest-900/60 hover:bg-forest-850 hover:text-emerald-300 text-surface-text border border-surface-border/50 transition-colors flex items-center justify-between"
+                  title="Click to fill Admin credentials"
+                >
+                  <span><span className="text-emerald-400 font-semibold">[Admin]</span> elena.vance@brightloop.io</span>
+                  <span className="text-[10px] text-surface-textMuted">Click to fill</span>
+                </div>
+                <div
+                  role="presentation"
+                  onClick={() => {
+                    setValue('email', 'marcus.finops@brightloop.io', { shouldValidate: true });
+                    setValue('password', 'Brightloop2026!', { shouldValidate: true });
+                  }}
+                  className="cursor-pointer text-left px-2 py-1 rounded bg-forest-900/60 hover:bg-forest-850 hover:text-mint-300 text-surface-text border border-surface-border/50 transition-colors flex items-center justify-between"
+                  title="Click to fill Staff credentials"
+                >
+                  <span><span className="text-mint-400 font-semibold">[Staff]</span> marcus.finops@brightloop.io</span>
+                  <span className="text-[10px] text-surface-textMuted">Click to fill</span>
+                </div>
+                <div
+                  role="presentation"
+                  onClick={() => {
+                    setValue('email', 'schen@acmecloud.com', { shouldValidate: true });
+                    setValue('password', 'Brightloop2026!', { shouldValidate: true });
+                  }}
+                  className="cursor-pointer text-left px-2 py-1 rounded bg-forest-900/60 hover:bg-forest-850 hover:text-blue-300 text-surface-text border border-surface-border/50 transition-colors flex items-center justify-between"
+                  title="Click to fill Customer credentials"
+                >
+                  <span><span className="text-blue-400 font-semibold">[Customer]</span> schen@acmecloud.com</span>
+                  <span className="text-[10px] text-surface-textMuted">Click to fill</span>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
 

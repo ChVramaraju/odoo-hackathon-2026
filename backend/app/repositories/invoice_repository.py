@@ -183,6 +183,15 @@ class SupabaseInvoiceRepository:
 
     def __init__(self, client) -> None:
         self.client = client
+        self._fallback = InMemoryInvoiceRepository()
+
+    def _is_missing_table(self, exc: Exception) -> bool:
+        err = str(exc)
+        return (
+            ("PGRST205" in err or "Could not find the table" in err)
+            and os.getenv("APP_ENV") != "production"
+            and os.getenv("REQUIRE_PERSISTENT_STORAGE") != "true"
+        )
 
     def _row_to_line(self, row: dict) -> InvoiceLineResponse:
         line_type_str = row.get("line_type")
@@ -265,6 +274,14 @@ class SupabaseInvoiceRepository:
         )
 
     async def create(self, invoice: InvoiceResponse) -> InvoiceResponse:
+        try:
+            return await self._create_impl(invoice)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.create(invoice)
+            raise
+
+    async def _create_impl(self, invoice: InvoiceResponse) -> InvoiceResponse:
         header_payload = {
             "id": str(invoice.id),
             "invoice_number": invoice.invoice_number,
@@ -314,6 +331,14 @@ class SupabaseInvoiceRepository:
         return invoice
 
     async def get(self, id: UUID) -> Optional[InvoiceResponse]:
+        try:
+            return await self._get_impl(id)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get(id)
+            raise
+
+    async def _get_impl(self, id: UUID) -> Optional[InvoiceResponse]:
         res = self.client.table("invoices").select("*").eq("id", str(id)).execute()
         if not res.data:
             return None
@@ -332,6 +357,16 @@ class SupabaseInvoiceRepository:
     async def get_by_billing_period(
         self, subscription_id: UUID, period_start: date, period_end: date
     ) -> Optional[InvoiceResponse]:
+        try:
+            return await self._get_by_billing_period_impl(subscription_id, period_start, period_end)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get_by_billing_period(subscription_id, period_start, period_end)
+            raise
+
+    async def _get_by_billing_period_impl(
+        self, subscription_id: UUID, period_start: date, period_end: date
+    ) -> Optional[InvoiceResponse]:
         res = (
             self.client.table("invoices")
             .select("*")
@@ -348,6 +383,14 @@ class SupabaseInvoiceRepository:
         return await self.get(UUID(str(inv_row["id"])))
 
     async def get_by_quotation_id(self, quotation_id: UUID) -> Optional[InvoiceResponse]:
+        try:
+            return await self._get_by_quotation_id_impl(quotation_id)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get_by_quotation_id(quotation_id)
+            raise
+
+    async def _get_by_quotation_id_impl(self, quotation_id: UUID) -> Optional[InvoiceResponse]:
         res = (
             self.client.table("invoices")
             .select("*")
@@ -362,6 +405,21 @@ class SupabaseInvoiceRepository:
         return await self.get(UUID(str(inv_row["id"])))
 
     async def list(
+        self,
+        customer_id: Optional[UUID] = None,
+        status: Optional[str] = None,
+        subscription_id: Optional[UUID] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[InvoiceResponse], int]:
+        try:
+            return await self._list_impl(customer_id, status, subscription_id, page, page_size)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.list(customer_id, status, subscription_id, page, page_size)
+            raise
+
+    async def _list_impl(
         self,
         customer_id: Optional[UUID] = None,
         status: Optional[str] = None,
@@ -403,6 +461,21 @@ class SupabaseInvoiceRepository:
         timestamp_field: Optional[str] = None,
         timestamp_value: Optional[datetime] = None,
     ) -> Optional[InvoiceResponse]:
+        try:
+            return await self._update_status_impl(id, status, expected_status, timestamp_field, timestamp_value)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.update_status(id, status, expected_status, timestamp_field, timestamp_value)
+            raise
+
+    async def _update_status_impl(
+        self,
+        id: UUID,
+        status: InvoiceStatus,
+        expected_status: Optional[InvoiceStatus] = None,
+        timestamp_field: Optional[str] = None,
+        timestamp_value: Optional[datetime] = None,
+    ) -> Optional[InvoiceResponse]:
         update_dict: dict = {
             "status": status.value,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -420,6 +493,16 @@ class SupabaseInvoiceRepository:
         return await self.get(id)
 
     async def record_payment_credit(
+        self, id: UUID, amount: Decimal
+    ) -> Optional[InvoiceResponse]:
+        try:
+            return await self._record_payment_credit_impl(id, amount)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.record_payment_credit(id, amount)
+            raise
+
+    async def _record_payment_credit_impl(
         self, id: UUID, amount: Decimal
     ) -> Optional[InvoiceResponse]:
         curr = await self.get(id)
@@ -445,6 +528,14 @@ class SupabaseInvoiceRepository:
         return await self.get(id)
 
     async def delete(self, id: UUID) -> bool:
+        try:
+            return await self._delete_impl(id)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.delete(id)
+            raise
+
+    async def _delete_impl(self, id: UUID) -> bool:
         res = self.client.table("invoices").delete().eq("id", str(id)).execute()
         return bool(res.data)
 
