@@ -36,3 +36,6 @@ Thumbs.db
 *.log
 tmp/
 temp/
+
+# Supabase CLI local metadata
+supabase/.temp/

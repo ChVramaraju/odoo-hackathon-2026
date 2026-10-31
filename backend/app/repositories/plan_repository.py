@@ -228,7 +228,7 @@ class SupabasePlanRepository:
             name=row["name"],
             code=row.get("code"),
             description=row.get("description"),
-            price=Decimal(str(row["price"])),
+            price=Decimal(str(row["price"])).quantize(Decimal("0.01")),
             currency=row.get("currency", "INR"),
             billing_frequency=freq,
             billing_interval=multiplier,
