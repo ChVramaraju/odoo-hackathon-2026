@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Annotated, Optional
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
 
 # Positive or zero decimal constraint
 PositiveDecimal = Annotated[Decimal, Field(ge=Decimal("0.00"), decimal_places=2)]
@@ -37,7 +37,7 @@ class ProductBase(BaseModel):
     ] = "service"
     sales_price: PositiveDecimal = Field(..., description="Base sales price")
     cost_price: PositiveDecimal = Field(default=Decimal("0.00"), description="Internal cost price")
-    currency: str = Field(default="USD", min_length=3, max_length=3, description="ISO 4217 currency code")
+    currency: str = Field(default="INR", min_length=3, max_length=3, description="ISO 4217 currency code")
     description: Optional[str] = Field(default=None, max_length=1000, description="Customer-facing description")
     notes: Annotated[
         Optional[str],
@@ -89,6 +89,16 @@ class ProductResponse(ProductBase):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field
+    @property
+    def product_type(self) -> str:
+        return self.type
+
+    @computed_field
+    @property
+    def internal_notes(self) -> Optional[str]:
+        return self.notes
+
 
 class ProductVariantBase(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -130,6 +140,26 @@ class ProductVariantResponse(ProductVariantBase):
     product_id: UUID
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def variant_name(self) -> str:
+        return self.name
+
+    @computed_field
+    @property
+    def variant_value(self) -> str:
+        return self.value
+
+    @computed_field
+    @property
+    def attribute_name(self) -> str:
+        return self.name
+
+    @computed_field
+    @property
+    def attribute_value(self) -> str:
+        return self.value
 
 
 class ProductListResponse(BaseModel):

@@ -277,3 +277,67 @@ async def test_staff_can_list_plans(staff_client: AsyncClient) -> None:
     res = await staff_client.get("/api/v1/plans")
     assert res.status_code == 200
     assert "items" in res.json()
+
+
+@pytest.mark.asyncio
+async def test_create_plan_default_currency_inr(admin_client: AsyncClient) -> None:
+    """When currency is omitted, plan defaults to INR."""
+    payload = {
+        "name": "INR Plan",
+        "price": "299.00",
+        "billing_frequency": "monthly",
+    }
+    response = await admin_client.post("/api/v1/plans", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["currency"] == "INR"
+
+
+@pytest.mark.asyncio
+async def test_customer_receives_404_for_inactive_plan(
+    admin_client: AsyncClient, customer_client: AsyncClient, staff_client: AsyncClient
+) -> None:
+    """Inactive or draft plans are hidden from customers (404 Not Found), matching database RLS."""
+    create_res = await admin_client.post(
+        "/api/v1/plans",
+        json={
+            "name": "Draft Inactive Plan",
+            "price": "199.00",
+            "billing_frequency": "monthly",
+            "status": "draft",
+            "is_active": False,
+        },
+    )
+    assert create_res.status_code == 201
+    plan_id = create_res.json()["id"]
+
+    # Staff can access draft/inactive plan
+    staff_res = await staff_client.get(f"/api/v1/plans/{plan_id}")
+    assert staff_res.status_code == 200
+
+    # Customer gets 404
+    cust_res = await customer_client.get(f"/api/v1/plans/{plan_id}")
+    assert cust_res.status_code == 404
+    assert cust_res.json()["error"]["code"] == "PLAN_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_customer_plan_list_filters_inactive(
+    admin_client: AsyncClient, customer_client: AsyncClient
+) -> None:
+    """Customer listing returns only active plans."""
+    await admin_client.post(
+        "/api/v1/plans",
+        json={
+            "name": "Archived Test Plan",
+            "price": "99.00",
+            "billing_frequency": "yearly",
+            "status": "archived",
+            "is_active": False,
+        },
+    )
+    cust_res = await customer_client.get("/api/v1/plans")
+    assert cust_res.status_code == 200
+    for p in cust_res.json()["items"]:
+        assert p["is_active"] is True
+        assert p["status"] == "active"

@@ -51,7 +51,7 @@ class PlanBase(BaseModel):
     code: Optional[str] = Field(default=None, max_length=50, description="Unique plan code or identifier")
     description: Optional[str] = Field(default=None, max_length=1000, description="Plan overview and terms")
     price: PositiveDecimal = Field(..., description="Recurring price per interval")
-    currency: str = Field(default="USD", min_length=3, max_length=3, description="ISO 4217 currency code")
+    currency: str = Field(default="INR", min_length=3, max_length=3, description="ISO 4217 currency code")
     billing_frequency: BillingFrequency = Field(default=BillingFrequency.MONTHLY, description="Billing frequency")
     billing_interval: int = Field(default=1, ge=1, le=365, description="Frequency multiplier (e.g. 1 month, 3 months)")
     minimum_quantity: int = Field(default=1, ge=1, description="Minimum subscription seat/item quantity")

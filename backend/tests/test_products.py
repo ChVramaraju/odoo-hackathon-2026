@@ -294,3 +294,132 @@ async def test_staff_can_list_products(staff_client: AsyncClient) -> None:
     res = await staff_client.get("/api/v1/products")
     assert res.status_code == 200
     assert "items" in res.json()
+
+
+@pytest.mark.asyncio
+async def test_create_product_default_currency_inr(admin_client: AsyncClient) -> None:
+    """When currency is omitted, it defaults to INR."""
+    payload = {
+        "name": "INR Default Product",
+        "sales_price": "100.00",
+    }
+    response = await admin_client.post("/api/v1/products", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["currency"] == "INR"
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_read_internal_notes_in_get(
+    admin_client: AsyncClient, customer_client: AsyncClient, staff_client: AsyncClient
+) -> None:
+    """Customer-facing description is returned, but staff-only internal notes are redacted for customers."""
+    # 1. Admin creates product with both description and internal notes
+    create_res = await admin_client.post(
+        "/api/v1/products",
+        json={
+            "name": "Confidential Product",
+            "sales_price": "500.00",
+            "description": "Public customer-facing description",
+            "notes": "Highly sensitive internal staff notes",
+            "is_active": True,
+        },
+    )
+    assert create_res.status_code == 201
+    prod_id = create_res.json()["id"]
+
+    # 2. Staff reads product -> notes and internal_notes are visible
+    staff_res = await staff_client.get(f"/api/v1/products/{prod_id}")
+    assert staff_res.status_code == 200
+    staff_data = staff_res.json()
+    assert staff_data["description"] == "Public customer-facing description"
+    assert staff_data["notes"] == "Highly sensitive internal staff notes"
+    assert staff_data["internal_notes"] == "Highly sensitive internal staff notes"
+
+    # 3. Customer reads product -> description is visible, notes and internal_notes are None
+    cust_res = await customer_client.get(f"/api/v1/products/{prod_id}")
+    assert cust_res.status_code == 200
+    cust_data = cust_res.json()
+    assert cust_data["description"] == "Public customer-facing description"
+    assert cust_data["notes"] is None
+    assert cust_data["internal_notes"] is None
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_read_internal_notes_in_list(
+    admin_client: AsyncClient, customer_client: AsyncClient
+) -> None:
+    """In product listings, customers receive items with redacted internal notes."""
+    await admin_client.post(
+        "/api/v1/products",
+        json={
+            "name": "Listing Note Test",
+            "sales_price": "120.00",
+            "notes": "Hidden internal note",
+            "is_active": True,
+        },
+    )
+    cust_res = await customer_client.get("/api/v1/products")
+    assert cust_res.status_code == 200
+    items = cust_res.json()["items"]
+    assert len(items) > 0
+    for item in items:
+        assert item["notes"] is None
+        assert item["internal_notes"] is None
+
+
+@pytest.mark.asyncio
+async def test_customer_receives_404_for_inactive_product(
+    admin_client: AsyncClient, customer_client: AsyncClient, staff_client: AsyncClient
+) -> None:
+    """Inactive products are hidden from customers (404 Not Found), matching database RLS."""
+    create_res = await admin_client.post(
+        "/api/v1/products",
+        json={
+            "name": "Draft Inactive Product",
+            "sales_price": "200.00",
+            "is_active": False,
+        },
+    )
+    assert create_res.status_code == 201
+    prod_id = create_res.json()["id"]
+
+    # Staff can see inactive product
+    staff_res = await staff_client.get(f"/api/v1/products/{prod_id}")
+    assert staff_res.status_code == 200
+
+    # Customer gets 404
+    cust_res = await customer_client.get(f"/api/v1/products/{prod_id}")
+    assert cust_res.status_code == 404
+    assert cust_res.json()["error"]["code"] == "PRODUCT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_variant_response_includes_all_contract_and_db_aliases(
+    admin_client: AsyncClient,
+) -> None:
+    """Variant responses include name/value as well as variant_name/variant_value and attribute_name/attribute_value."""
+    prod_res = await admin_client.post(
+        "/api/v1/products",
+        json={"name": "Variant Parent", "sales_price": "100.00"},
+    )
+    prod_id = prod_res.json()["id"]
+
+    var_res = await admin_client.post(
+        f"/api/v1/products/{prod_id}/variants",
+        json={
+            "name": "Storage Size",
+            "value": "500GB",
+            "price_adjustment": "50.00",
+            "sku": "STORAGE-500",
+        },
+    )
+    assert var_res.status_code == 201
+    data = var_res.json()
+    assert data["name"] == "Storage Size"
+    assert data["value"] == "500GB"
+    assert data["variant_name"] == "Storage Size"
+    assert data["variant_value"] == "500GB"
+    assert data["attribute_name"] == "Storage Size"
+    assert data["attribute_value"] == "500GB"
+    assert data["sku"] == "STORAGE-500"

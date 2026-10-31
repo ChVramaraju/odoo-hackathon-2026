@@ -98,6 +98,19 @@ async def get_current_user(
     )
 
 
+async def get_optional_current_user(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+) -> Optional[User]:
+    """
+    Extracts the authenticated user if the Authorization header is present and valid.
+    Returns None if Authorization is omitted.
+    Raises AppError(401) if Authorization header is present but malformed or invalid.
+    """
+    if not authorization:
+        return None
+    return await get_current_user(authorization=authorization)
+
+
 def require_role(allowed_roles: list[str]) -> Callable[[User], User]:
     """
     Dependency factory to restrict an endpoint to specific roles.

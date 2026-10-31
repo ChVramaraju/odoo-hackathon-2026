@@ -231,7 +231,7 @@ class SupabaseProductRepository:
             type=row.get("product_type") or row.get("type", "service"),
             sales_price=Decimal(str(row["sales_price"])),
             cost_price=Decimal(str(row.get("cost_price", "0.00"))),
-            currency=row.get("currency", "USD"),
+            currency=row.get("currency", "INR"),
             description=row.get("description"),
             notes=row.get("internal_notes") or row.get("notes"),
             is_active=row.get("is_active", True),
