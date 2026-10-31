@@ -164,6 +164,15 @@ class SupabaseSubscriptionRepository:
 
     def __init__(self, client) -> None:
         self.client = client
+        self._fallback = InMemorySubscriptionRepository()
+
+    def _is_missing_table(self, exc: Exception) -> bool:
+        err = str(exc)
+        return (
+            ("PGRST205" in err or "Could not find the table" in err)
+            and os.getenv("APP_ENV") != "production"
+            and os.getenv("REQUIRE_PERSISTENT_STORAGE") != "true"
+        )
 
     def _row_to_line(self, row: dict) -> SubscriptionLineResponse:
         line_type_str = row.get("line_type")
@@ -233,6 +242,14 @@ class SupabaseSubscriptionRepository:
         )
 
     async def create(self, subscription: SubscriptionResponse) -> SubscriptionResponse:
+        try:
+            return await self._create_impl(subscription)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.create(subscription)
+            raise
+
+    async def _create_impl(self, subscription: SubscriptionResponse) -> SubscriptionResponse:
         header_payload = {
             "id": str(subscription.id),
             "subscription_number": subscription.subscription_number,
@@ -280,6 +297,14 @@ class SupabaseSubscriptionRepository:
         return subscription
 
     async def get(self, id: UUID) -> Optional[SubscriptionResponse]:
+        try:
+            return await self._get_impl(id)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get(id)
+            raise
+
+    async def _get_impl(self, id: UUID) -> Optional[SubscriptionResponse]:
         res = self.client.table("subscriptions").select("*").eq("id", str(id)).execute()
         if not res.data:
             return None
@@ -296,12 +321,34 @@ class SupabaseSubscriptionRepository:
         return self._row_to_subscription(sub_row, lines)
 
     async def get_by_quotation_id(self, quotation_id: UUID) -> Optional[SubscriptionResponse]:
+        try:
+            return await self._get_by_quotation_id_impl(quotation_id)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.get_by_quotation_id(quotation_id)
+            raise
+
+    async def _get_by_quotation_id_impl(self, quotation_id: UUID) -> Optional[SubscriptionResponse]:
         res = self.client.table("subscriptions").select("*").eq("quotation_id", str(quotation_id)).limit(1).execute()
         if not res.data:
             return None
         return await self.get(UUID(res.data[0]["id"]))
 
     async def list(
+        self,
+        customer_id: Optional[UUID] = None,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[SubscriptionResponse], int]:
+        try:
+            return await self._list_impl(customer_id, status, page, page_size)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.list(customer_id, status, page, page_size)
+            raise
+
+    async def _list_impl(
         self,
         customer_id: Optional[UUID] = None,
         status: Optional[str] = None,
@@ -342,6 +389,20 @@ class SupabaseSubscriptionRepository:
         end_date: Optional[date] = None,
         next_billing_date: Optional[date] = None,
     ) -> Optional[SubscriptionResponse]:
+        try:
+            return await self._update_impl(id, notes, end_date, next_billing_date)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.update(id, notes, end_date, next_billing_date)
+            raise
+
+    async def _update_impl(
+        self,
+        id: UUID,
+        notes: Optional[str] = None,
+        end_date: Optional[date] = None,
+        next_billing_date: Optional[date] = None,
+    ) -> Optional[SubscriptionResponse]:
         update_data: dict = {"updated_at": datetime.now().isoformat()}
         if notes is not None:
             update_data["notes"] = notes
@@ -356,6 +417,21 @@ class SupabaseSubscriptionRepository:
         return await self.get(id)
 
     async def update_status(
+        self,
+        id: UUID,
+        status: SubscriptionStatus,
+        timestamp_field: Optional[str] = None,
+        timestamp_value: Optional[datetime] = None,
+        expected_status: Optional[SubscriptionStatus] = None,
+    ) -> Optional[SubscriptionResponse]:
+        try:
+            return await self._update_status_impl(id, status, timestamp_field, timestamp_value, expected_status)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.update_status(id, status, timestamp_field, timestamp_value, expected_status)
+            raise
+
+    async def _update_status_impl(
         self,
         id: UUID,
         status: SubscriptionStatus,
@@ -379,6 +455,14 @@ class SupabaseSubscriptionRepository:
         return await self.get(id)
 
     async def delete(self, id: UUID) -> bool:
+        try:
+            return await self._delete_impl(id)
+        except Exception as exc:
+            if self._is_missing_table(exc):
+                return await self._fallback.delete(id)
+            raise
+
+    async def _delete_impl(self, id: UUID) -> bool:
         res = self.client.table("subscriptions").delete().eq("id", str(id)).execute()
         return bool(res.data)
 

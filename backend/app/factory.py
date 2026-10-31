@@ -7,6 +7,7 @@ instances without relying on module-level import side effects.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.api.v1.router import router as v1_router
 from app.core.config import get_settings
@@ -33,7 +34,7 @@ def create_app() -> FastAPI:
     )
 
     # ── CORS ─────────────────────────────────────────────────────────────────
-    # Allow only the configured frontend origins.  In production set
+    # Allow only the configured frontend origins. In production set
     # CORS_ORIGINS to the deployed frontend URL.
     app.add_middleware(
         CORSMiddleware,
@@ -46,8 +47,12 @@ def create_app() -> FastAPI:
     # ── Exception handlers ────────────────────────────────────────────────────
     register_exception_handlers(app)
 
+    # ── Convenient Redirects ──────────────────────────────────────────────────
+    @app.get("/docs", include_in_schema=False)
+    async def docs_redirect():
+        return RedirectResponse(url="/api/docs")
+
     # ── Routes ───────────────────────────────────────────────────────────────
     app.include_router(v1_router, prefix="/api/v1")
 
     return app
-

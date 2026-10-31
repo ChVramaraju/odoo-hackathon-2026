@@ -11,6 +11,7 @@ from app.api.v1 import (
     invoices,
     payments,
     plans,
+    portal,
     products,
     quotations,
     subscriptions,
@@ -25,3 +26,4 @@ router.include_router(quotations.router)
 router.include_router(subscriptions.router)
 router.include_router(invoices.router)
 router.include_router(payments.router)
+router.include_router(portal.router)
