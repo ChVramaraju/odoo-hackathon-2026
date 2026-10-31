@@ -3,18 +3,19 @@ Brightloop — Products & Product Variants API Endpoints.
 
 Implements:
 - POST  /api/v1/products                  (Admin only)
-- GET   /api/v1/products                  (Public / Authenticated)
-- GET   /api/v1/products/{product_id}     (Public / Authenticated)
+- GET   /api/v1/products                  (Public / Authenticated; notes masked for customers)
+- GET   /api/v1/products/{product_id}     (Public / Authenticated; notes masked for customers)
 - PATCH /api/v1/products/{product_id}     (Admin only)
 - POST  /api/v1/products/{product_id}/variants (Admin only)
 - GET   /api/v1/products/{product_id}/variants (Public / Authenticated)
 """
 
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.dependencies.auth import User, require_role
+from app.dependencies.auth import User, get_current_user_optional, require_role
 from app.dependencies.services import get_product_service
 from app.schemas.product import (
     ProductCreate,
@@ -54,9 +55,23 @@ async def list_products(
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
     service: ProductService = Depends(get_product_service),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ) -> ProductListResponse:
-    """List products with pagination and active state filter."""
-    return await service.list_products(active_only=active_only, page=page, page_size=page_size)
+    """List products with pagination and active state filter. Staff/admin view internal notes; customer responses mask internal notes."""
+    result = await service.list_products(active_only=active_only, page=page, page_size=page_size)
+    is_staff = current_user is not None and current_user.role in ("admin", "staff")
+    if not is_staff:
+        sanitized_items = [
+            item.model_copy(update={"notes": None})
+            for item in result.items
+        ]
+        return ProductListResponse(
+            items=sanitized_items,
+            total=result.total,
+            page=result.page,
+            page_size=result.page_size,
+        )
+    return result
 
 
 @router.get(
@@ -67,9 +82,14 @@ async def list_products(
 async def get_product(
     product_id: UUID,
     service: ProductService = Depends(get_product_service),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ) -> ProductResponse:
-    """Retrieve detailed product record by ID."""
-    return await service.get_product(product_id)
+    """Retrieve detailed product record by ID. Staff/admin view internal notes; customer responses mask internal notes."""
+    product = await service.get_product(product_id)
+    is_staff = current_user is not None and current_user.role in ("admin", "staff")
+    if not is_staff:
+        return product.model_copy(update={"notes": None})
+    return product
 
 
 @router.patch(
@@ -115,4 +135,3 @@ async def list_product_variants(
 ) -> list[ProductVariantResponse]:
     """List all variants for a given product."""
     return await service.list_variants(product_id, active_only=active_only)
-

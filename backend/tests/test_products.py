@@ -294,3 +294,105 @@ async def test_staff_can_list_products(staff_client: AsyncClient) -> None:
     res = await staff_client.get("/api/v1/products")
     assert res.status_code == 200
     assert "items" in res.json()
+
+
+@pytest.mark.asyncio
+async def test_create_product_default_currency_inr(admin_client: AsyncClient) -> None:
+    """When currency is omitted, it defaults to INR."""
+    res = await admin_client.post(
+        "/api/v1/products",
+        json={"name": "INR Product", "sales_price": "100.00"},
+    )
+    assert res.status_code == 201
+    assert res.json()["currency"] == "INR"
+
+
+@pytest.mark.asyncio
+async def test_customer_and_anonymous_cannot_leak_internal_notes(
+    admin_client: AsyncClient,
+    staff_client: AsyncClient,
+    customer_client: AsyncClient,
+    client: AsyncClient,
+) -> None:
+    """
+    CRITICAL SECURITY & DATA LEAKAGE TEST:
+    Customer-facing description is visible to all callers.
+    Internal notes must NEVER leak to customers or anonymous visitors.
+    Admin and Staff may view internal notes.
+    """
+    # 1. Admin creates product with both description and confidential internal notes
+    create_res = await admin_client.post(
+        "/api/v1/products",
+        json={
+            "name": "Enterprise Security Gateway",
+            "sales_price": "5000.00",
+            "cost_price": "2000.00",
+            "currency": "INR",
+            "description": "Public enterprise-grade secure gateway service.",
+            "notes": "CONFIDENTIAL: 60% vendor discount negotiated with OEM.",
+        },
+    )
+    assert create_res.status_code == 201
+    product_id = create_res.json()["id"]
+
+    # 2. Admin retrieves product: sees internal notes and description
+    admin_get = await admin_client.get(f"/api/v1/products/{product_id}")
+    assert admin_get.status_code == 200
+    assert admin_get.json()["description"] == "Public enterprise-grade secure gateway service."
+    assert admin_get.json()["notes"] == "CONFIDENTIAL: 60% vendor discount negotiated with OEM."
+
+    # 3. Staff retrieves product: sees internal notes and description
+    staff_get = await staff_client.get(f"/api/v1/products/{product_id}")
+    assert staff_get.status_code == 200
+    assert staff_get.json()["description"] == "Public enterprise-grade secure gateway service."
+    assert staff_get.json()["notes"] == "CONFIDENTIAL: 60% vendor discount negotiated with OEM."
+
+    # 4. Customer retrieves product: notes MUST BE None, description intact
+    customer_get = await customer_client.get(f"/api/v1/products/{product_id}")
+    assert customer_get.status_code == 200
+    assert customer_get.json()["description"] == "Public enterprise-grade secure gateway service."
+    assert customer_get.json()["notes"] is None
+
+    # 5. Anonymous caller retrieves product: notes MUST BE None, description intact
+    anon_get = await client.get(f"/api/v1/products/{product_id}")
+    assert anon_get.status_code == 200
+    assert anon_get.json()["description"] == "Public enterprise-grade secure gateway service."
+    assert anon_get.json()["notes"] is None
+
+    # 6. Customer lists products: all notes fields MUST BE None
+    customer_list = await customer_client.get("/api/v1/products")
+    assert customer_list.status_code == 200
+    for item in customer_list.json()["items"]:
+        assert item["notes"] is None
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_patch_product(admin_client: AsyncClient, customer_client: AsyncClient) -> None:
+    """Customer role is forbidden from modifying products (403 PERMISSION_DENIED)."""
+    create_res = await admin_client.post(
+        "/api/v1/products",
+        json={"name": "Protected Product", "sales_price": "20.00"},
+    )
+    product_id = create_res.json()["id"]
+    patch_res = await customer_client.patch(
+        f"/api/v1/products/{product_id}",
+        json={"sales_price": "1.00"},
+    )
+    assert patch_res.status_code == 403
+    assert patch_res.json()["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_create_variant(admin_client: AsyncClient, customer_client: AsyncClient) -> None:
+    """Customer role is forbidden from creating product variants (403 PERMISSION_DENIED)."""
+    create_res = await admin_client.post(
+        "/api/v1/products",
+        json={"name": "Variant Host Product", "sales_price": "20.00"},
+    )
+    product_id = create_res.json()["id"]
+    var_res = await customer_client.post(
+        f"/api/v1/products/{product_id}/variants",
+        json={"name": "Seat", "value": "10", "price_adjustment": "5.00"},
+    )
+    assert var_res.status_code == 403
+    assert var_res.json()["error"]["code"] == "PERMISSION_DENIED"
