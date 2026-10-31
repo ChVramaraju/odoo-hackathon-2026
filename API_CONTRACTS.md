@@ -2,18 +2,20 @@
 
 **Base prefix:** `/api/v1`  
 **Format:** JSON over HTTPS  
-**Status:** Shared contract. An endpoint is not implemented merely because it appears here. FastAPI OpenAPI output and automated tests become the executable evidence.
+**Default Currency:** `INR` (Indian Rupee, ISO 4217)  
+**Status:** Implemented and verified for Phase B (Catalog: Products, Product Variants, Plans). All mutating operations require explicit server-side role verification.
 
 ## Conventions
 
-- Authentication: `Authorization: Bearer <Supabase access token>` for protected routes. FastAPI verifies the token before handling the request.
-- IDs: UUID strings.
-- Timestamps: ISO 8601 with timezone.
-- Money: decimal strings in JSON for exact representation; backend uses Python `Decimal` and PostgreSQL `NUMERIC`. Include currency explicitly where needed. Default currency is `INR`.
-- Lists: `items`, `page`, `page_size`, and `total` unless a documented endpoint-specific shape is needed.
-- Validate request bodies, path params, filters, and state transitions.
-- The backend computes totals, taxes, discounts, invoice status, and balances. Ignore client-supplied derived totals.
-- Return consistent errors without stack traces or database internals.
+- **Authentication:** `Authorization: Bearer <Supabase access token>` for protected routes. FastAPI verifies the token against Supabase Auth (or dependency overrides in test suite) before handling the request.
+- **Authorization & Service Role Security:** Because backend database clients using `SUPABASE_SERVICE_ROLE_KEY` bypass PostgreSQL Row Level Security (RLS), every FastAPI route must strictly enforce role-based access control (`require_role(...)`) server-side.
+- **IDs:** UUID strings.
+- **Timestamps:** ISO 8601 with timezone.
+- **Money:** decimal strings in JSON for exact representation (`NUMERIC(12, 2)`); backend uses Python `Decimal` and PostgreSQL `NUMERIC`. Default currency across Brightloop is `INR`.
+- **Lists:** `items`, `page`, `page_size`, and `total` standard envelope unless a documented endpoint-specific shape is needed.
+- **Validate request bodies, path params, filters, and state transitions.**
+- **The backend computes totals, taxes, discounts, invoice status, and balances.** Ignore client-supplied derived totals.
+- **Return consistent errors without stack traces or database internals.**
 
 Example error:
 ```json
@@ -59,7 +61,8 @@ For action endpoints, use request bodies only when the action requires parameter
 |---|---|---|---|
 | Read own subscription/invoice/payment | Yes | As operationally permitted | Yes |
 | Read other customers' records | No | Only if role permits the task | Yes |
-| Create/manage products, plans, taxes, discounts | No | Limited to explicit permission | Yes |
+| Read public products & plans | Yes (notes masked) | Yes (full notes) | Yes (full notes) |
+| Create/manage products, plans, taxes, discounts | No | No | Yes |
 | Add staff | No | No | Yes |
 | Record operational payment | No | If permitted | Yes |
 | View finance-wide reports | No | If permitted | Yes |
@@ -88,19 +91,13 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 
 ## Implemented Phase B Specifications (Products, Variants & Plans)
 
-### System-Wide Conventions
-- **Base / Default Currency:** `INR` (Indian Rupee, ISO 4217). If omitted in requests, the system defaults to `INR`.
-- **Money Representation:** Decimal strings in JSON (e.g. `"1499.00"`), mapped to Python `Decimal` and PostgreSQL `NUMERIC(12, 2)`.
-- **Role Enforcement & RLS Guard:** Because internal FastAPI service calls may utilize `SUPABASE_SERVICE_ROLE_KEY` (which by design bypasses PostgreSQL Row Level Security), every mutating or restricted endpoint MUST enforce explicit authorization via FastAPI `require_role(...)` guards.
-
----
-
 ### 1. Products & Variants
 
-#### Privacy & Field Distinction:
-- `description` (string, max 1000): Customer-facing public overview and marketing copy. Returned to all callers (public visitors, customers, staff, and admins).
-- `internal_notes` / `notes` (string, max 1000): Operational and administrative staff notes. **Strictly redacted** (returned as `null`) for customer and unauthenticated public requests; visible only to authenticated `admin` and `staff` roles.
-- `is_active` (boolean): Inactive products (`is_active: false`) are visible only to `admin` and `staff`. Public/customer requests for inactive items return `404 Not Found`.
+#### Data Privacy & Notes Isolation:
+- `description` (TEXT): Customer-facing description. Visible to all callers (public, customer, staff, admin).
+- `notes` / `internal_notes` (TEXT): Confidential internal staff/admin notes (e.g. supplier markup, vendor discount notes).
+  - **Leakage Prevention Rule:** When a product is retrieved or listed by an unauthenticated visitor or a user with role `customer`, the `notes` field is strictly masked to `null`.
+  - **Privileged Access:** Only callers authenticated with `admin` or `staff` roles receive populated `notes`.
 
 #### `POST /api/v1/products`
 - **Access:** Admin only (`require_role(["admin"])`)
@@ -110,11 +107,11 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
   {
     "name": "Cloud Storage Pro",
     "type": "service",
-    "sales_price": "1499.00",
-    "cost_price": "500.00",
+    "sales_price": "2999.00",
+    "cost_price": "1000.00",
     "currency": "INR",
-    "description": "Enterprise cloud storage with automated backup",
-    "notes": "Internal procurement margin target: 65%",
+    "description": "High-availability enterprise cloud storage",
+    "notes": "Internal supplier negotiated margin: 60%",
     "is_active": true
   }
   ```
@@ -124,13 +121,11 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "name": "Cloud Storage Pro",
     "type": "service",
-    "product_type": "service",
-    "sales_price": "1499.00",
-    "cost_price": "500.00",
+    "sales_price": "2999.00",
+    "cost_price": "1000.00",
     "currency": "INR",
-    "description": "Enterprise cloud storage with automated backup",
-    "notes": "Internal procurement margin target: 65%",
-    "internal_notes": "Internal procurement margin target: 65%",
+    "description": "High-availability enterprise cloud storage",
+    "notes": "Internal supplier negotiated margin: 60%",
     "is_active": true,
     "created_at": "2026-10-31T10:00:00Z",
     "updated_at": "2026-10-31T10:00:00Z"
@@ -138,11 +133,9 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
   ```
 
 #### `GET /api/v1/products`
-- **Access:** Public / Authenticated (Role-aware visibility)
-  - **Admin / Staff:** Can pass `active_only=false` to inspect inactive items; receives unredacted `notes` / `internal_notes`.
-  - **Customer / Public:** Restricted to active products (`is_active=true`); `notes` and `internal_notes` are redacted to `null`.
+- **Access:** Public / Authenticated
 - **Query Params:** `active_only` (bool, default `false`), `page` (int, default `1`), `page_size` (int, default `20`)
-- **Response Body (`200`):**
+- **Response Body (`200` — Customer / Public view with internal notes masked):**
   ```json
   {
     "items": [
@@ -150,13 +143,11 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
         "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
         "name": "Cloud Storage Pro",
         "type": "service",
-        "product_type": "service",
-        "sales_price": "1499.00",
-        "cost_price": "500.00",
+        "sales_price": "2999.00",
+        "cost_price": "1000.00",
         "currency": "INR",
-        "description": "Enterprise cloud storage with automated backup",
+        "description": "High-availability enterprise cloud storage",
         "notes": null,
-        "internal_notes": null,
         "is_active": true,
         "created_at": "2026-10-31T10:00:00Z",
         "updated_at": "2026-10-31T10:00:00Z"
@@ -169,9 +160,7 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
   ```
 
 #### `GET /api/v1/products/{product_id}`
-- **Access:** Public / Authenticated (Role-aware)
-  - Returns `404 Not Found` to customer/public callers if product is inactive.
-  - Redacts `notes` / `internal_notes` to `null` for customer/public callers.
+- **Access:** Public / Authenticated (Customers and anonymous callers receive `notes: null`; Staff/Admin receive full `notes`)
 - **Status:** `200 OK` (or `404 Not Found`)
 
 #### `PATCH /api/v1/products/{product_id}`
@@ -181,28 +170,25 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 #### `POST /api/v1/products/{product_id}/variants`
 - **Access:** Admin only (`require_role(["admin"])`)
 - **Status:** `201 Created`
-- **Request Body:** Accepts `name`, `attribute_name`, or `variant_name`; and `value`, `attribute_value`, or `variant_value`:
+- **Variant Field Aliases:** The API accepts `name` (aliases: `attribute_name`, `variant_name`) and `value` (aliases: `attribute_value`, `variant_value`). Persisted to `product_variants.attribute_name` and `product_variants.attribute_value`.
+- **Request Body:**
   ```json
   {
     "name": "User Seat",
     "value": "10-User Pack",
-    "price_adjustment": "499.00",
+    "price_adjustment": "2500.00",
     "sku": "CRM-10U",
     "is_active": true
   }
   ```
-- **Response Body (`201`):** Provides both standard API fields (`name`, `value`) and computed database/frontend aliases (`variant_name`, `variant_value`, `attribute_name`, `attribute_value`):
+- **Response Body (`201`):**
   ```json
   {
     "id": "4da85f64-5717-4562-b3fc-2c963f66afa7",
     "product_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "name": "User Seat",
     "value": "10-User Pack",
-    "variant_name": "User Seat",
-    "variant_value": "10-User Pack",
-    "attribute_name": "User Seat",
-    "attribute_value": "10-User Pack",
-    "price_adjustment": "499.00",
+    "price_adjustment": "2500.00",
     "sku": "CRM-10U",
     "is_active": true,
     "created_at": "2026-10-31T10:00:00Z",
@@ -211,7 +197,7 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
   ```
 
 #### `GET /api/v1/products/{product_id}/variants`
-- **Access:** Public / Authenticated (Customer sees active variants only)
+- **Access:** Public / Authenticated
 - **Status:** `200 OK`
 - **Response Body (`200`):** Array of `ProductVariantResponse` objects.
 
@@ -219,16 +205,10 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
 
 ### 2. Subscription Plans
 
-#### Recurrence & End-of-Term Mappings:
-- **Billing Recurrence:**
-  - API `billing_frequency` (string enum: `daily`, `weekly`, `monthly`, `yearly`) maps to database column `billing_interval`.
-  - API `billing_interval` (positive integer multiplier, e.g. `1`, `3`) maps to database column `interval_count`.
-- **End-of-Term Behavior:**
-  - API accepts: `renew`, `close`, `cancel` (legacy client alias for `close`), `pause`.
-  - Database schema constraint: `CHECK (end_of_term_behavior IN ('renew', 'close', 'pause'))`.
-  - Backend translation: Incoming `"cancel"` is mapped to `"close"` prior to database persistence. Responses return canonical `"close"`.
-- **Status:** `draft`, `active`, `closed`, `archived`.
-  - Customers/public callers can only view active plans (`is_active: true` and `status: "active"`). Non-active plans return `404 Not Found` for customers.
+#### Mapping Rules:
+- **Billing Recurrence:** The API exposes `billing_frequency` (`daily`, `weekly`, `monthly`, `yearly`) and `billing_interval` (integer multiplier, e.g. 1 month, 3 months). The database maps these to columns `billing_interval` (VARCHAR frequency) and `interval_count` (INTEGER multiplier).
+- **End-of-Term Behavior (`cancel` → `close`):** The API accepts `end_of_term_behavior` with values `"renew"`, `"close"`, `"pause"`, or `"cancel"`. When `"cancel"` is provided by API clients, the persistence repository automatically translates it to `"close"` prior to database storage, fulfilling the PostgreSQL check constraint `CHECK (end_of_term_behavior IN ('renew', 'close', 'pause'))`.
+- **Date Aliases:** The API accepts `start_date` (alias: `available_from`) and `end_date` (alias: `available_until`).
 
 #### `POST /api/v1/plans`
 - **Access:** Admin only (`require_role(["admin"])`)
@@ -237,9 +217,8 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
   ```json
   {
     "name": "Standard Monthly",
-    "code": "PLAN-STD-M",
     "description": "Standard business tier billed monthly",
-    "price": "2499.00",
+    "price": "4900.00",
     "currency": "INR",
     "billing_frequency": "monthly",
     "billing_interval": 1,
@@ -250,35 +229,23 @@ Every route must enforce these rules server-side. The AI model cannot grant perm
     "status": "active"
   }
   ```
-- **Response Body (`201`):**
+- **Response Body (`201`):** `PlanResponse` object with `currency: "INR"`.
+
+#### `GET /api/v1/plans`
+- **Access:** Public / Authenticated
+- **Query Params:** `status` (draft/active/closed/archived), `billing_frequency` (daily/weekly/monthly/yearly), `page` (int), `page_size` (int)
+- **Response Body (`200`):**
   ```json
   {
-    "id": "5ea85f64-5717-4562-b3fc-2c963f66afa8",
-    "name": "Standard Monthly",
-    "code": "PLAN-STD-M",
-    "description": "Standard business tier billed monthly",
-    "price": "2499.00",
-    "currency": "INR",
-    "billing_frequency": "monthly",
-    "billing_interval": 1,
-    "minimum_quantity": 1,
-    "start_date": "2026-01-01",
-    "end_date": "2026-12-31",
-    "end_of_term_behavior": "renew",
-    "status": "active",
-    "is_active": true,
-    "created_at": "2026-10-31T10:00:00Z",
-    "updated_at": "2026-10-31T10:00:00Z"
+    "items": [],
+    "total": 0,
+    "page": 1,
+    "page_size": 20
   }
   ```
 
-#### `GET /api/v1/plans`
-- **Access:** Public / Authenticated (Customer sees active plans only)
-- **Query Params:** `status` (active/closed/draft/archived), `billing_frequency` (daily/weekly/monthly/yearly), `page` (int), `page_size` (int)
-- **Response Body (`200`):** `PlanListResponse` containing `items`, `total`, `page`, `page_size`.
-
 #### `GET /api/v1/plans/{plan_id}`
-- **Access:** Public / Authenticated (Returns `404` for non-active plans requested by customers)
+- **Access:** Public / Authenticated
 - **Status:** `200 OK` (or `404 Not Found`)
 
 #### `PATCH /api/v1/plans/{plan_id}`

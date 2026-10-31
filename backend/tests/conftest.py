@@ -13,7 +13,12 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.dependencies.auth import User, get_current_user, get_optional_current_user
+from app.dependencies.auth import (
+    User,
+    get_current_user,
+    get_current_user_optional,
+    get_optional_current_user,
+)
 from app.factory import create_app
 from app.repositories.plan_repository import InMemoryPlanRepository, get_plan_repository
 from app.repositories.product_repository import InMemoryProductRepository, get_product_repository
@@ -74,6 +79,7 @@ async def client(
     app = create_app()
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
+    app.dependency_overrides[get_current_user_optional] = lambda: None
     app.dependency_overrides[get_optional_current_user] = lambda: None
 
     transport = ASGITransport(app=app)
@@ -92,6 +98,7 @@ async def admin_client(
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_current_user] = lambda: admin_user
+    app.dependency_overrides[get_current_user_optional] = lambda: admin_user
     app.dependency_overrides[get_optional_current_user] = lambda: admin_user
 
     transport = ASGITransport(app=app)
@@ -110,6 +117,7 @@ async def staff_client(
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_current_user] = lambda: staff_user
+    app.dependency_overrides[get_current_user_optional] = lambda: staff_user
     app.dependency_overrides[get_optional_current_user] = lambda: staff_user
 
     transport = ASGITransport(app=app)
@@ -128,6 +136,7 @@ async def customer_client(
     app.dependency_overrides[get_plan_repository] = lambda: plan_repo
     app.dependency_overrides[get_product_repository] = lambda: prod_repo
     app.dependency_overrides[get_current_user] = lambda: customer_user
+    app.dependency_overrides[get_current_user_optional] = lambda: customer_user
     app.dependency_overrides[get_optional_current_user] = lambda: customer_user
 
     transport = ASGITransport(app=app)

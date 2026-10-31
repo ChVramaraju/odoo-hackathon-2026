@@ -3,8 +3,8 @@ Brightloop — Products & Product Variants API Endpoints.
 
 Implements:
 - POST  /api/v1/products                  (Admin only)
-- GET   /api/v1/products                  (Public / Authenticated: customer sees active only; internal notes redacted)
-- GET   /api/v1/products/{product_id}     (Public / Authenticated: customer sees active only; internal notes redacted)
+- GET   /api/v1/products                  (Public / Authenticated: customer sees active only; internal notes masked)
+- GET   /api/v1/products/{product_id}     (Public / Authenticated: customer sees active only; internal notes masked)
 - PATCH /api/v1/products/{product_id}     (Admin only)
 - POST  /api/v1/products/{product_id}/variants (Admin only)
 - GET   /api/v1/products/{product_id}/variants (Public / Authenticated: customer sees active only)
@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 
 from app.core.errors import AppError
-from app.dependencies.auth import User, get_optional_current_user, require_role
+from app.dependencies.auth import User, get_current_user_optional, require_role
 from app.dependencies.services import get_product_service
 from app.schemas.product import (
     ProductCreate,
@@ -55,7 +55,7 @@ async def list_products(
     active_only: bool = Query(default=False, description="Filter for active items only"),
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: ProductService = Depends(get_product_service),
 ) -> ProductListResponse:
     """
@@ -69,9 +69,16 @@ async def list_products(
     result = await service.list_products(active_only=effective_active_only, page=page, page_size=page_size)
 
     if not is_staff:
-        # Prevent customer/public responses from leaking staff-only internal notes
-        for item in result.items:
-            item.notes = None
+        sanitized_items = [
+            item.model_copy(update={"notes": None})
+            for item in result.items
+        ]
+        return ProductListResponse(
+            items=sanitized_items,
+            total=result.total,
+            page=result.page,
+            page_size=result.page_size,
+        )
 
     return result
 
@@ -83,7 +90,7 @@ async def list_products(
 )
 async def get_product(
     product_id: UUID,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: ProductService = Depends(get_product_service),
 ) -> ProductResponse:
     """
@@ -102,8 +109,7 @@ async def get_product(
                 status_code=status.HTTP_404_NOT_FOUND,
                 details=[{"product_id": str(product_id)}],
             )
-        # Prevent customer responses from leaking staff-only internal notes
-        product.notes = None
+        return product.model_copy(update={"notes": None})
 
     return product
 
@@ -147,7 +153,7 @@ async def create_product_variant(
 async def list_product_variants(
     product_id: UUID,
     active_only: bool = Query(default=False, description="Filter for active variants only"),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: ProductService = Depends(get_product_service),
 ) -> list[ProductVariantResponse]:
     """List all variants for a given product. Customers only see active variants."""

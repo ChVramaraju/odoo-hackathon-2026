@@ -281,7 +281,6 @@ async def test_staff_can_list_plans(staff_client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_create_plan_default_currency_inr(admin_client: AsyncClient) -> None:
-    """When currency is omitted, plan defaults to INR."""
     payload = {
         "name": "INR Plan",
         "price": "299.00",
@@ -341,3 +340,19 @@ async def test_customer_plan_list_filters_inactive(
     for p in cust_res.json()["items"]:
         assert p["is_active"] is True
         assert p["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_patch_plan(admin_client: AsyncClient, customer_client: AsyncClient) -> None:
+    """Customer role is forbidden from modifying plans (403 PERMISSION_DENIED)."""
+    create_res = await admin_client.post(
+        "/api/v1/plans",
+        json={"name": "Protected Plan", "price": "200.00"},
+    )
+    plan_id = create_res.json()["id"]
+    patch_res = await customer_client.patch(
+        f"/api/v1/plans/{plan_id}",
+        json={"price": "10.00"},
+    )
+    assert patch_res.status_code == 403
+    assert patch_res.json()["error"]["code"] == "PERMISSION_DENIED"

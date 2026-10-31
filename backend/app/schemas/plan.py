@@ -55,22 +55,16 @@ class PlanBase(BaseModel):
     billing_frequency: BillingFrequency = Field(default=BillingFrequency.MONTHLY, description="Billing frequency")
     billing_interval: int = Field(default=1, ge=1, le=365, description="Frequency multiplier (e.g. 1 month, 3 months)")
     minimum_quantity: int = Field(default=1, ge=1, description="Minimum subscription seat/item quantity")
-    start_date: Annotated[
-        Optional[date],
-        Field(
-            default=None,
-            validation_alias=AliasChoices("start_date", "available_from"),
-            description="Availability start date",
-        ),
-    ] = None
-    end_date: Annotated[
-        Optional[date],
-        Field(
-            default=None,
-            validation_alias=AliasChoices("end_date", "available_until"),
-            description="Availability expiry date",
-        ),
-    ] = None
+    start_date: Optional[date] = Field(
+        default=None,
+        validation_alias=AliasChoices("start_date", "available_from"),
+        description="Availability start date",
+    )
+    end_date: Optional[date] = Field(
+        default=None,
+        validation_alias=AliasChoices("end_date", "available_until"),
+        description="Availability expiry date",
+    )
     end_of_term_behavior: EndOfTermBehavior = Field(default=EndOfTermBehavior.RENEW, description="Action at term end")
     status: PlanStatus = Field(default=PlanStatus.ACTIVE, description="Lifecycle status")
     is_active: bool = Field(default=True, description="Whether the plan is active for subscription")
@@ -91,20 +85,14 @@ class PlanUpdate(BaseModel):
     billing_frequency: Optional[BillingFrequency] = None
     billing_interval: Optional[int] = Field(default=None, ge=1, le=365)
     minimum_quantity: Optional[int] = Field(default=None, ge=1)
-    start_date: Annotated[
-        Optional[date],
-        Field(
-            default=None,
-            validation_alias=AliasChoices("start_date", "available_from"),
-        ),
-    ] = None
-    end_date: Annotated[
-        Optional[date],
-        Field(
-            default=None,
-            validation_alias=AliasChoices("end_date", "available_until"),
-        ),
-    ] = None
+    start_date: Optional[date] = Field(
+        default=None,
+        validation_alias=AliasChoices("start_date", "available_from"),
+    )
+    end_date: Optional[date] = Field(
+        default=None,
+        validation_alias=AliasChoices("end_date", "available_until"),
+    )
     end_of_term_behavior: Optional[EndOfTermBehavior] = None
     status: Optional[PlanStatus] = None
     is_active: Optional[bool] = None
