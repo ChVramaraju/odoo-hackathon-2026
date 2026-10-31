@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-forest-bg: #090e0c;
+    --color-forest-card: #0d1713;
+    --color-emerald-primary: #00c982;
+    --color-mint-accent: #8cf5c2;
+  }
+
+  body {
+    background-color: #090e0c;
+    color: #dfe4e0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d1713;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e3328;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00c982;
+}
+
+/* Glass & Glow utilities */
+.glass-panel {
+  background: rgba(13, 23, 19, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(25, 46, 36, 0.8);
+}
+
+.glow-border {
+  border: 1px solid rgba(0, 201, 130, 0.35);
+  box-shadow: 0 0 20px -4px rgba(0, 201, 130, 0.2);
+}
+
